@@ -496,7 +496,6 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 			wakaama_initiated = false;
 		}
 
-//		WiFi.reconnect();
 		WiFi.disconnect(true);
 
 		st_status = true;
@@ -597,12 +596,8 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 	{
 		if(tick < 20)
 		{
-			debugln(".\r\n");
-
 			if(digitalRead(0))
 			{
-				debugln("..\r\n");
-
 				led = true;
 				intr = false;
 				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
@@ -613,8 +608,6 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 
 		else if(tick >=20)
 		{
-			debugln("...\r\n");
-
 			if(timer_initiated)
 			{
 				os_timer_disarm(&timer);
