@@ -63,6 +63,7 @@ os_timer_t timer;
 os_timer_t led_timer;
 
 uint8_t led_mode = 0;
+uint8_t sta_tick = 0;
 volatile uint8_t tick = 0;
 uint32_t poly = 0x82f63b78;
 
@@ -139,8 +140,6 @@ void loop(void)
 
 void ICACHE_FLASH_ATTR wifi_init(void)
 {
-	detachInterrupt(digitalPinToInterrupt(0));
-
 	os_timer_disarm(&led_timer);
 
 	st_status = false;
@@ -149,7 +148,6 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 	if(gen_crc(&buff) != buff.crc)
 	{
-		attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 		debugln("CRC doesn't match\r\n");
 		debugln("CRC: 0x%08x\r\n", buff.crc);
 		return;
@@ -160,16 +158,25 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 		debugln("Found previous connection\r\n");
 		WiFi.reconnect();
 
+		sta_tick = 0;
+
 		while(WiFi.status() != WL_CONNECTED)
 		{
-			if((WiFi.status() == WL_NO_SSID_AVAIL) && (!had_connected))
+			if(sta_tick == 19)
 			{
+				debugln("No AP with requested SSID found\r\n");
+
 				led_mode = 3;
 				os_timer_arm(&led_timer, 100, true);
 				led = true;
-				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
-				return;
 			}
+
+			if(ap_status)
+				return;
+
+			delay(1000);
+
+			sta_tick++;
 
 			yield();
 		}
@@ -202,16 +209,25 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		WiFi.begin(buff.sta_ssid, buff.sta_pass);
 
+		sta_tick = 0;
+
 		while(WiFi.status() != WL_CONNECTED)
 		{
-			if((WiFi.status() == WL_NO_SSID_AVAIL) && (!had_connected))
+			if(sta_tick == 19)
 			{
+				debugln("No AP with requested SSID found\r\n");
+
 				led_mode = 3;
 				os_timer_arm(&led_timer, 100, true);
 				led = true;
-				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
-				return;
 			}
+
+			if(ap_status)
+				return;
+
+			delay(1000);
+
+			sta_tick++;
 
 			yield();
 		}
@@ -230,16 +246,25 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		debugln("Connecting...\r\n");
 
+		sta_tick = 0;
+
 		while(WiFi.status() != WL_CONNECTED)
 		{
-			if((WiFi.status() == WL_NO_SSID_AVAIL) && (!had_connected))
+			if(sta_tick == 19)
 			{
+				debugln("No AP with requested SSID found\r\n");
+
 				led_mode = 3;
 				os_timer_arm(&led_timer, 100, true);
 				led = true;
-				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
-				return;
 			}
+
+			if(ap_status)
+				return;
+
+			delay(1000);
+
+			sta_tick++;
 
 			yield();
 		}
@@ -256,7 +281,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 	wakaama_init();
 	timer_init(&timer,5000,true);
 
-	attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+	os_timer_disarm(&led_timer);
+	digitalWrite(13, HIGH);
 }
 
 void ICACHE_FLASH_ATTR wifi_ap_init(void)
@@ -511,18 +537,18 @@ void ICACHE_FLASH_ATTR gpio0_intr_handler(void)
 {
 	debugln("%s\r\n", __func__);
 
+	os_timer_disarm(&led_timer);
+
 	digitalWrite(13, HIGH);
 
 	detachInterrupt(digitalPinToInterrupt(0));
 
-	os_timer_arm(&led_timer, 100, true);
-
-	led = false;
+	tick = 0;
+	intr = true;
 
 	delayMicroseconds(1000 * 100);
 
-	tick = 0;
-	intr = true;
+	os_timer_arm(&led_timer, 100, true);
 }
 
 void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool repeat)
@@ -571,8 +597,13 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 	{
 		if(tick < 20)
 		{
+			debugln(".\r\n");
+
 			if(digitalRead(0))
 			{
+				debugln("..\r\n");
+
+				led = true;
 				intr = false;
 				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 			}
@@ -582,6 +613,8 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 
 		else if(tick >=20)
 		{
+			debugln("...\r\n");
+
 			if(timer_initiated)
 			{
 				os_timer_disarm(&timer);
