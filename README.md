@@ -1,8 +1,22 @@
 # lwm2m-client-for-sonoff-basic
 
+C++ implementation of lwm2m client code for use with Sonoff Basic WiFi Wireless Smart Switch from iTead.
+
 # Compiling/Flashing
 
 Project built on PlatformIO core. Refer to PlatformIO documentation for detailed instructions on core installation and project configuration at: http://docs.platformio.org/en/latest/
+
+Project uses third party libraries which are configured as submodules. To install submodules into cloned repository, run:
+
+$ git submodule init
+
+and
+
+$ git submodule update
+
+inside repository directory.
+
+------------------------------------------------------------------------------------------------------------------------------
 
 To compile project run:
 
@@ -10,7 +24,7 @@ $ platformio run
 
 ------------------------------------------------------------------------------------------------------------------------------
 
-To upload project run:
+To upload project switch device into flash mode by powering on device with button pressed, then run:
 
 $ platformio run -t upload
 
@@ -20,7 +34,6 @@ To see device status information through serial connection, upload project as su
 
 $ platformio run -e debug -t upload
 
-------------------------------------------------------------------------------------------------------------------------------
 
 # Configuration
 
@@ -52,7 +65,6 @@ To change current configuration send POST request to "http://192.168.4.1:80/ap",
 
 Password recommended at least eight characters long.
 
-------------------------------------------------------------------------------------------------------------------------------
 
 # LED indication:
 
@@ -66,7 +78,6 @@ Red LED on: relay switched on;
 
 Red LED off: relay switched off;
 
-------------------------------------------------------------------------------------------------------------------------------
 
 # Controling device
 
