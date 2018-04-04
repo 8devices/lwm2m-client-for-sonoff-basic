@@ -16,13 +16,13 @@ To change current configuration send POST request to "http://192.168.4.1:80/ap",
   
   "client_name":"example_client",
   
-  "server_address":"coap://192.168.0.1:11"
+  "server_address":"coap://192.168.0.1:5555"
   
 }
 
 Password recommended at least eight characters long.
 
-
+------------------------------------------------------------------------------------------------------------------------------
 
 LED indication:
 
@@ -36,6 +36,7 @@ Red LED on: relay switched on;
 
 Red LED off: relay switched off;
 
+------------------------------------------------------------------------------------------------------------------------------
 
 Device configured to connect to lwm2m rest server. For instructions on how to access REST interface, refer to rest server example. To control relay send PUT request with TLV package to rest server. Object ID - 3312, resource ID - 5850.
 
