@@ -1,5 +1,29 @@
 # lwm2m-client-for-sonoff-basic
 
+# Compiling/Flashing
+
+Project built on PlatformIO core. Refer to PlatformIO documentation for detailed instructions on core installation and project configuration at: http://docs.platformio.org/en/latest/
+
+To compile project run:
+
+$ platformio run
+
+------------------------------------------------------------------------------------------------------------------------------
+
+To upload project run:
+
+$ platformio run -t upload
+
+------------------------------------------------------------------------------------------------------------------------------
+
+To see device status information through serial connection, upload project as such:
+
+$ platformio run -e debug -t upload
+
+------------------------------------------------------------------------------------------------------------------------------
+
+# Configuration
+
 To configure device hold button for at least three seconds, until green LED starts blinking. Connect to AP "SonoffAP" with password "12345678".
 
 ------------------------------------------------------------------------------------------------------------------------------
@@ -30,7 +54,7 @@ Password recommended at least eight characters long.
 
 ------------------------------------------------------------------------------------------------------------------------------
 
-LED indication:
+# LED indication:
 
 Green LED fast blinking: device in AP mode;
 
@@ -43,6 +67,8 @@ Red LED on: relay switched on;
 Red LED off: relay switched off;
 
 ------------------------------------------------------------------------------------------------------------------------------
+
+# Controling device
 
 Device configured to connect to lwm2m rest server. For instructions on how to access REST interface, refer to rest server example. To control relay send PUT request with TLV package to rest server. Object ID - 3312, resource ID - 5850.
 
