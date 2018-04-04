@@ -9,10 +9,15 @@ To keep current configuration send GET request to "http://192.168.4.1:80/keep"
 To change current configuration send POST request to "http://192.168.4.1:80/ap", with JSON payload, ex.:
 
 {
+
   "ssid":"ap_ssid",
+  
   "pass":"ap_password",
+  
   "client_name":"example_client",
+  
   "server_address":"coap://192.168.0.1:11"
+  
 }
 
 Password recommended at least eight characters long.
