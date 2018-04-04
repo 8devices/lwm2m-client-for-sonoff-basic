@@ -74,7 +74,7 @@ Green LED on for some time then off for short period: configured AP not found, o
 
 Geen LED short light pulses: device AP mode failed;
 
-(IF GPIO12 INTERFACED WITH RED LED)
+(IF GPIO12 INTERFACED WITH RED LED):
 
 Red LED on: relay switched on;
 
