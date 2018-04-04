@@ -33,6 +33,9 @@ bool st_status = false;
 bool ap_status = false;
 bool server_done = false;
 bool sta_reconnect = false;
+bool had_connected = false;
+volatile bool led = false;
+volatile bool intr = false;
 
 ESP8266WebServer server(80);
 
@@ -47,9 +50,20 @@ struct network_info
 	char wak_client_name[32];
 }buff;
 
-os_timer_t timer;
-os_timer_t gpio_timer;
+enum
+{
+	NO_BLINK,
+	BLINK1,
+	BLINK2,
+	BLINK3
+};
 
+
+os_timer_t timer;
+os_timer_t led_timer;
+
+uint8_t led_mode = 0;
+volatile uint8_t tick = 0;
 uint32_t poly = 0x82f63b78;
 
 lwm2m_context_t *client_context = nullptr;
@@ -66,12 +80,12 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void);
 void ICACHE_FLASH_ATTR debugln(const char * format, ... );
 void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool repeat);
 void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg);
+void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer);
+void ICACHE_FLASH_ATTR led_timer_callback(void *pArg);
 void ICACHE_FLASH_ATTR gpio0_intr_handler(void);
 const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
 const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
 void ICACHE_FLASH_ATTR wakaama_init(void);
-void ICACHE_FLASH_ATTR hard_timer_init(uint32_t value);
-void ICACHE_RAM_ATTR hw_timer_cb(void);
 void ICACHE_RAM_ATTR set_config_eeprom(struct network_info buff);
 void ICACHE_RAM_ATTR get_config_eeprom(void);
 void ICACHE_FLASH_ATTR httpserver(void);
@@ -80,7 +94,6 @@ void ICACHE_RAM_ATTR handle_get(void);
 void ICACHE_RAM_ATTR handle_not_found(void);
 uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff);
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt);
-void ICACHE_RAM_ATTR reconnect_after_loss_handler(const WiFiEventStationModeConnected &evt);
 
 void setup(void)
 {
@@ -95,12 +108,11 @@ void setup(void)
 	WiFi.persistent(false);
 	WiFi.mode(WIFI_STA);
 
-//	connection_loss = WiFi.onStationModeDisconnected(&connection_loss_handler);
-//	reconnect_after_loss = WiFi.onStationModeConnected(&reconnect_after_loss_handler);
+	connection_loss = WiFi.onStationModeDisconnected(&connection_loss_handler);
 
 	EEPROM.begin(512);
 
-//	hard_timer_init(1000);
+	led_timer_init(&led_timer);
 
 	gpio_init();
 
@@ -127,7 +139,9 @@ void loop(void)
 
 void ICACHE_FLASH_ATTR wifi_init(void)
 {
-	ETS_GPIO_INTR_DISABLE();
+	detachInterrupt(digitalPinToInterrupt(0));
+
+	os_timer_disarm(&led_timer);
 
 	st_status = false;
 
@@ -135,7 +149,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 	if(gen_crc(&buff) != buff.crc)
 	{
-		ETS_GPIO_INTR_ENABLE();
+		attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 		debugln("CRC doesn't match\r\n");
 		debugln("CRC: 0x%08x\r\n", buff.crc);
 		return;
@@ -148,8 +162,13 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		while(WiFi.status() != WL_CONNECTED)
 		{
-			if(WiFi.status() == WL_NO_SSID_AVAIL)
+			if((WiFi.status() == WL_NO_SSID_AVAIL) && (!had_connected))
 			{
+				led_mode = 3;
+				os_timer_arm(&led_timer, 100, true);
+				led = true;
+				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+				return;
 			}
 
 			yield();
@@ -185,8 +204,13 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		while(WiFi.status() != WL_CONNECTED)
 		{
-			if(WiFi.status() == WL_NO_SSID_AVAIL)
+			if((WiFi.status() == WL_NO_SSID_AVAIL) && (!had_connected))
 			{
+				led_mode = 3;
+				os_timer_arm(&led_timer, 100, true);
+				led = true;
+				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+				return;
 			}
 
 			yield();
@@ -208,8 +232,13 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		while(WiFi.status() != WL_CONNECTED)
 		{
-			if(WiFi.status() == WL_NO_SSID_AVAIL)
+			if((WiFi.status() == WL_NO_SSID_AVAIL) && (!had_connected))
 			{
+				led_mode = 3;
+				os_timer_arm(&led_timer, 100, true);
+				led = true;
+				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+				return;
 			}
 
 			yield();
@@ -222,17 +251,21 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 	debugln("Connected\r\n");
 
+	sta_reconnect = false;
+
 	wakaama_init();
 	timer_init(&timer,5000,true);
 
-	ETS_GPIO_INTR_ENABLE();
+	attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 }
 
 void ICACHE_FLASH_ATTR wifi_ap_init(void)
 {
-	ETS_GPIO_INTR_DISABLE();
+	detachInterrupt(digitalPinToInterrupt(0));
 
 	ap_status = false;
+	st_status = false;
+	sta_reconnect = true;
 
 	debugln("%s\r\n", __func__);
 
@@ -253,24 +286,31 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void)
 	debugln("successful\r\n");
 
 	if(WiFi.softAP("SonoffAP", "12345678"))
+	{
 		debugln("AP on\r\n");
+		led_mode = 1;
+	}
 	else
 	{
 		debugln("AP should fail\r\n");
-		ETS_GPIO_INTR_ENABLE();
+		led_mode = 2;
+		attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 		return;
 	}
 
 	httpserver();
 
 	ap_status = false;
+	led = false;
+	led_mode = 0;
+	digitalWrite(13, HIGH);
 
 #ifndef WIFI_AP_MODE
 
 	st_status = true;
 
 #endif
-	ETS_GPIO_INTR_ENABLE();
+	attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 }
 
 void ICACHE_FLASH_ATTR httpserver(void)
@@ -279,13 +319,19 @@ void ICACHE_FLASH_ATTR httpserver(void)
 
 	server.on("/ap", HTTP_POST, handle_post);
 	server.on("/ap", HTTP_GET, handle_get);
+	server.on("/keep", [](){
+
+		server.send(200, "text/plain", "Keeping current configuration\r\n");
+
+		server_done = true;
+	});
 	server.onNotFound(handle_not_found);
 	server.begin();
 
 	while(!server_done)
 	{
 		server.handleClient();
-		delay(5);
+		delay(100);
 		yield();
 	}
 
@@ -296,9 +342,13 @@ void ICACHE_RAM_ATTR handle_post(void)
 {
 	debugln("POST request\r\n");
 
+	WiFiClient client = server.client();
+
 	StaticJsonBuffer<200> jsonBuffer;
 
 	JsonObject &root = jsonBuffer.parseObject(server.arg("plain"));
+
+	client.flush();
 
 	if(!root.success())
 	{
@@ -340,6 +390,10 @@ void ICACHE_RAM_ATTR handle_get(void)
 {
 	debugln("GET request\r\n");
 
+	WiFiClient client = server.client();
+
+	client.flush();
+
 	String message = "";
 
 	get_config_eeprom();
@@ -357,7 +411,7 @@ void ICACHE_RAM_ATTR handle_get(void)
 		message += "	\"ssid\": \"wifiap\",\r\n";
 		message += "	\"pass\": \"wifipass\",\r\n";
 		message += "	\"server_address\": \"coap://192.168.0.1:11\",\r\n";
-		message += "	\"name\": \"device1\"\r\n";
+		message += "	\"client_name\": \"device1\"\r\n";
 		message += "	}\r\n";
 
 		server.send(500, "text/plain", message);
@@ -383,7 +437,7 @@ void ICACHE_RAM_ATTR handle_get(void)
 	message += "	\"ssid\": \"wifiap\",\r\n";
 	message += "	\"pass\": \"wifipass\",\r\n";
 	message += "	\"server_address\": \"coap://192.168.0.1:11\",\r\n";
-	message += "	\"name\": \"device1\"\r\n";
+	message += "	\"client_name\": \"device1\"\r\n";
 	message += "	}\r\n";
 
 
@@ -397,42 +451,34 @@ void ICACHE_RAM_ATTR handle_not_found(void)
 
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt)
 {
-	debugln("Lost connection with AP, attempting to reconnect\r\n");
-
-	if(timer_initiated)
+	if(!sta_reconnect)
 	{
-		os_timer_disarm(&timer);
-		timer_initiated = false;
+		debugln("Lost connection with AP, attempting to reconnect\r\n");
+
+		os_timer_disarm(&led_timer);
+
+		if(timer_initiated)
+		{
+			os_timer_disarm(&timer);
+			timer_initiated = false;
+		}
+
+		if(wakaama_initiated)
+		{
+			lwm2m_client_close();
+			lwm2m_network_close(client_context);
+			wakaama_initiated = false;
+		}
+
+//		WiFi.reconnect();
+		WiFi.disconnect(true);
+
+		st_status = true;
 	}
 
-	if(wakaama_initiated)
-	{
-		lwm2m_client_close();
-		lwm2m_network_close(client_context);
-		wakaama_initiated = false;
-	}
-
-//	WiFi.reconnect();
-
+	had_connected = true;
 	sta_reconnect = true;
-//	st_status = true;
 }
-
-void ICACHE_RAM_ATTR reconnect_after_loss_handler(const WiFiEventStationModeConnected &evt)
-{
-	if(sta_reconnect == true)
-	{
-//		while(WiFi.status() != WL_CONNECTED) yield();
-
-		debugln("Successfully reconnected after lost connection\r\n");
-
-		wakaama_init();
-		timer_init(&timer,5000,true);
-	}
-
-	sta_reconnect = false;
-}
-
 
 void ICACHE_FLASH_ATTR debugln(const char * format, ... )
 {
@@ -449,14 +495,15 @@ void ICACHE_FLASH_ATTR debugln(const char * format, ... )
 void ICACHE_FLASH_ATTR gpio_init(void)
 {
 	debugln("gpio init\r\n");
-	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U,FUNC_GPIO12);
-	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U,FUNC_GPIO13);
-	PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U,FUNC_GPIO0);
 
-	GPIO_DIS_OUTPUT(GPIO_ID_PIN(0));
-	ETS_GPIO_INTR_DISABLE();
-	ETS_GPIO_INTR_ATTACH(gpio0_intr_handler, NULL);
-	gpio_pin_intr_state_set(GPIO_ID_PIN(0), GPIO_PIN_INTR_ANYEDGE);
+	pinMode(12, OUTPUT); //relay
+	pinMode(13, OUTPUT); //led
+	pinMode(0, INPUT_PULLUP);
+
+	attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+
+	digitalWrite(12, LOW);
+	digitalWrite(13, HIGH);
 
 }
 
@@ -464,39 +511,18 @@ void ICACHE_FLASH_ATTR gpio0_intr_handler(void)
 {
 	debugln("%s\r\n", __func__);
 
-	static uint32_t last = 0;
-	uint32_t now = millis();
+	digitalWrite(13, HIGH);
 
-	if (GPIO_INPUT_GET(0)) // released
-	{
-		uint32 dt = now - last;
-		if (dt > 3000)
-		{
-			GPIO_OUTPUT_SET(GPIO_ID_PIN(13),0);
+	detachInterrupt(digitalPinToInterrupt(0));
 
-			if(timer_initiated)
-			{
-				os_timer_disarm(&timer);
-				timer_initiated = false;
-			}
+	os_timer_arm(&led_timer, 100, true);
 
-			if(wakaama_initiated)
-			{
-				lwm2m_client_close();
-				lwm2m_network_close(client_context);
-				wakaama_initiated = false;
-			}
+	led = false;
 
-			ap_status = true;
-		}
-	}
-	last = now;
+	delayMicroseconds(1000 * 100);
 
-//	clear interrupt state
-	uint16_t gpio_status = 0;
-	gpio_status = GPIO_REG_READ(GPIO_STATUS_ADDRESS);
-	GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpio_status);
-
+	tick = 0;
+	intr = true;
 }
 
 void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool repeat)
@@ -512,10 +538,11 @@ void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 {
 	debugln("timer_callback_lwm2m\r\n");
 
-
+#ifdef DEBUGLN
 	debugln("Client state before step: %s\r\n", get_client_state(client_context->state));
 	if(client_context->serverList != 0)
 		debugln("Server state before step: %s\r\n", get_server_state(client_context->serverList->status));
+#endif
 
 	uint8_t step_result = lwm2m_step(client_context, &(tv.tv_sec));
 
@@ -524,12 +551,93 @@ void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 		debugln("lwm2m_step() failed: 0x%X\r\n", step_result);
 	}
 
+#ifdef DEBUGLN
 	debugln("Client state after step: %s\r\n", get_client_state(client_context->state));
 	if(client_context->serverList != 0)
 		debugln("Server state after step: %s\r\n", get_server_state(client_context->serverList->status));
+#endif
 
 }
 
+void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer)
+{
+	debugln("led timer init\r\n");
+	os_timer_setfn(ptimer, led_timer_callback, NULL);
+}
+
+void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
+{
+	if(intr)
+	{
+		if(tick < 20)
+		{
+			if(digitalRead(0))
+			{
+				intr = false;
+				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+			}
+
+			tick++;
+		}
+
+		else if(tick >=20)
+		{
+			if(timer_initiated)
+			{
+				os_timer_disarm(&timer);
+				timer_initiated = false;
+			}
+
+			if(wakaama_initiated)
+			{
+				lwm2m_client_close();
+				lwm2m_network_close(client_context);
+				wakaama_initiated = false;
+			}
+
+			digitalWrite(13, HIGH);
+
+			attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
+
+			tick = 0;
+
+			led = true;
+			intr = false;
+			ap_status = true;
+		}
+	}
+
+	if(led)
+	{
+		switch(led_mode)
+		{
+		case BLINK1: //AP mode
+			if(tick % 4 == 0)
+				digitalWrite(13, LOW);
+			else if(tick % 2 == 0)
+				digitalWrite(13, HIGH);
+			break;
+
+		case BLINK2: //failed AP mode
+			if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
+				digitalWrite(13, LOW);
+			else
+				digitalWrite(13, HIGH);
+			break;
+
+		case BLINK3: //can't find AP
+			if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
+				digitalWrite(13, HIGH);
+			else
+				digitalWrite(13, LOW);
+			break;
+		}
+
+		tick++;
+	}
+}
+
+#ifdef DEBUGLN
 const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state)
 {
 	switch(state)
@@ -566,6 +674,7 @@ const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state)
 		default: return "STATE_ERROR";
 	}
 }
+#endif
 
 void ICACHE_FLASH_ATTR wakaama_init(void)
 {
@@ -606,7 +715,6 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 //    paima objektu sarasa ir sukuria objektu instances, paskirsto atminti
 //    bet nepapildo serveriu saraso
 
-//	PADARYT TIKRINIMA AR SERVERIO JAU NERA SARASE
 	debugln("lwm2m_add_server\r\n");
 	status = (uint8_t)lwm2m_add_server(123, buff.wak_server, 100, false, NULL, NULL, 0);
 
@@ -621,20 +729,6 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 
 	wakaama_initiated = true;
 }
-
-void ICACHE_FLASH_ATTR hard_timer_init(uint32_t value)
-{
-	debugln("hard_timer_init\r\n");
-
-	hw_timer_init(FRC1_SOURCE, 1);
-	hw_timer_set_func(hw_timer_cb);
-	hw_timer_arm(value);
-}
-
-void ICACHE_RAM_ATTR hw_timer_cb(void)
-{
-}
-
 
 void ICACHE_RAM_ATTR set_config_eeprom(struct network_info buf)
 {
