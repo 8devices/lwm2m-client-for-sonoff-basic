@@ -70,9 +70,11 @@ Password recommended at least eight characters long.
 
 Green LED fast blinking: device in AP mode;
 
-Green LED on for some time then off for short period: configured AP not found, or device failed to connect;
+Green LED on for some time then off for short period: configured AP not found or device failed to connect;
 
-Geen LED short light pulses: device AP mode failed;
+Geen LED one short pulse: device is operational;
+
+Geen LED two short pulses: device AP mode failed;
 
 (IF GPIO12 INTERFACED WITH RED LED):
 
