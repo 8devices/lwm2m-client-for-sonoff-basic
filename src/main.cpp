@@ -582,6 +582,10 @@ void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 		debugln("Server state after step: %s\r\n", get_server_state(client_context->serverList->status));
 #endif
 
+	if(client_context->state == STATE_BOOTSTRAP_REQUIRED)
+	{
+		client_context->state = STATE_INITIAL;
+	}
 }
 
 void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer)
