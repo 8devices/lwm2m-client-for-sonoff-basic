@@ -54,7 +54,8 @@ enum
 	NO_BLINK,
 	BLINK1,
 	BLINK2,
-	BLINK3
+	BLINK3,
+	BLINK4
 };
 
 
@@ -317,7 +318,7 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void)
 	else
 	{
 		debugln("AP should fail\r\n");
-		led_mode = 3;
+		led_mode = 4;
 		attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 		return;
 	}
@@ -650,8 +651,14 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 			digitalWrite(13, HIGH);
 		break;
 
-	case BLINK3: //can't find AP
+	case BLINK3: //can't find AP, failed to connect
 		if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
+			digitalWrite(13, HIGH);
+		else
+			digitalWrite(13, LOW);
+		break;
+	case BLINK4: //AP mode failed
+		if((tick % 30 == 0) || ((tick - 1) % 30 == 0) || ((tick % 30 - 4) == 0) || ((tick - 5) % 30 == 0))
 			digitalWrite(13, HIGH);
 		else
 			digitalWrite(13, LOW);
