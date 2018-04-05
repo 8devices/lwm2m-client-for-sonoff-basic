@@ -140,8 +140,6 @@ void loop(void)
 
 void ICACHE_FLASH_ATTR wifi_init(void)
 {
-
-
 	st_status = false;
 
 	get_config_eeprom();
@@ -168,7 +166,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 				led_mode = 3;
 
-
+				st_status = true;
+				return;
 			}
 
 			if(ap_status)
@@ -219,7 +218,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 				led_mode = 3;
 
-
+				st_status = true;
+				return;
 			}
 
 			if(ap_status)
@@ -256,7 +256,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 				led_mode = 3;
 
-
+				st_status = true;
+				return;
 			}
 
 			if(ap_status)
@@ -479,8 +480,6 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 		debugln("Lost connection with AP, attempting to reconnect\r\n");
 
 //		led timer on, isimt if'us
-
-
 
 		if(timer_initiated)
 		{
