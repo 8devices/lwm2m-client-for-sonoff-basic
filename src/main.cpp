@@ -34,7 +34,6 @@ bool ap_status = false;
 bool server_done = false;
 bool sta_reconnect = false;
 bool had_connected = false;
-volatile bool led = false;
 volatile bool intr = false;
 
 ESP8266WebServer server(80);
@@ -64,7 +63,6 @@ os_timer_t led_timer;
 
 uint8_t led_mode = 0;
 uint8_t sta_tick = 0;
-uint8_t led_tick = 0;
 volatile uint8_t tick = 0;
 uint32_t poly = 0x82f63b78;
 
@@ -141,7 +139,7 @@ void loop(void)
 
 void ICACHE_FLASH_ATTR wifi_init(void)
 {
-	os_timer_disarm(&led_timer);
+
 
 	st_status = false;
 
@@ -168,8 +166,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 				debugln("No AP with requested SSID found\r\n");
 
 				led_mode = 3;
-				os_timer_arm(&led_timer, 100, true);
-				led = true;
+
+
 			}
 
 			if(ap_status)
@@ -219,8 +217,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 				debugln("No AP with requested SSID found\r\n");
 
 				led_mode = 3;
-				os_timer_arm(&led_timer, 100, true);
-				led = true;
+
+
 			}
 
 			if(ap_status)
@@ -256,8 +254,8 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 				debugln("No AP with requested SSID found\r\n");
 
 				led_mode = 3;
-				os_timer_arm(&led_timer, 100, true);
-				led = true;
+
+
 			}
 
 			if(ap_status)
@@ -282,8 +280,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 	wakaama_init();
 	timer_init(&timer,5000,true);
 
-	os_timer_disarm(&led_timer);
-	digitalWrite(13, HIGH);
+	led_mode = 2;
 }
 
 void ICACHE_FLASH_ATTR wifi_ap_init(void)
@@ -320,7 +317,7 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void)
 	else
 	{
 		debugln("AP should fail\r\n");
-		led_mode = 2;
+		led_mode = 3;
 		attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 		return;
 	}
@@ -328,9 +325,7 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void)
 	httpserver();
 
 	ap_status = false;
-	led = false;
-	led_mode = 0;
-	digitalWrite(13, HIGH);
+	led_mode = 2;
 
 #ifndef WIFI_AP_MODE
 
@@ -484,7 +479,7 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 
 //		led timer on, isimt if'us
 
-		os_timer_disarm(&led_timer);
+
 
 		if(timer_initiated)
 		{
@@ -539,8 +534,6 @@ void ICACHE_FLASH_ATTR gpio0_intr_handler(void)
 {
 	debugln("%s\r\n", __func__);
 
-	os_timer_disarm(&led_timer);
-
 	digitalWrite(13, HIGH);
 
 	detachInterrupt(digitalPinToInterrupt(0));
@@ -550,7 +543,7 @@ void ICACHE_FLASH_ATTR gpio0_intr_handler(void)
 
 	delayMicroseconds(1000 * 100);
 
-	os_timer_arm(&led_timer, 100, true);
+
 }
 
 void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool repeat)
@@ -565,13 +558,6 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 {
 	debugln("timer_callback_lwm2m\r\n");
-
-	led_tick++;
-
-	if(led_tick % 2)
-		digitalWrite(13, HIGH);
-	else
-		digitalWrite(13, LOW);
 
 #ifdef DEBUGLN
 	debugln("Client state before step: %s\r\n", get_client_state(client_context->state));
@@ -602,6 +588,8 @@ void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer)
 {
 	debugln("led timer init\r\n");
 	os_timer_setfn(ptimer, led_timer_callback, NULL);
+	os_timer_arm(&led_timer, 100, true);
+	led_mode = 2;
 }
 
 void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
@@ -612,7 +600,7 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 		{
 			if(digitalRead(0))
 			{
-				led = true;
+
 				intr = false;
 				attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 			}
@@ -641,40 +629,36 @@ void ICACHE_FLASH_ATTR led_timer_callback(void *pArg)
 
 			tick = 0;
 
-			led = true;
 			intr = false;
 			ap_status = true;
 		}
 	}
 
-	if(led)
+	switch(led_mode)
 	{
-		switch(led_mode)
-		{
-		case BLINK1: //AP mode
-			if(tick % 4 == 0)
-				digitalWrite(13, LOW);
-			else if(tick % 2 == 0)
-				digitalWrite(13, HIGH);
-			break;
+	case BLINK1: //AP mode
+		if(tick % 4 == 0)
+			digitalWrite(13, LOW);
+		else if(tick % 2 == 0)
+			digitalWrite(13, HIGH);
+		break;
 
-		case BLINK2: //failed AP mode
-			if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
-				digitalWrite(13, LOW);
-			else
-				digitalWrite(13, HIGH);
-			break;
+	case BLINK2: //device is alive
+		if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
+			digitalWrite(13, LOW);
+		else
+			digitalWrite(13, HIGH);
+		break;
 
-		case BLINK3: //can't find AP
-			if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
-				digitalWrite(13, HIGH);
-			else
-				digitalWrite(13, LOW);
-			break;
-		}
-
-		tick++;
+	case BLINK3: //can't find AP
+		if((tick % 30 == 0) || ((tick - 1) % 30 == 0))
+			digitalWrite(13, HIGH);
+		else
+			digitalWrite(13, LOW);
+		break;
 	}
+
+	tick++;
 }
 
 #ifdef DEBUGLN
