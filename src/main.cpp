@@ -64,6 +64,7 @@ os_timer_t led_timer;
 
 uint8_t led_mode = 0;
 uint8_t sta_tick = 0;
+uint8_t led_tick = 0;
 volatile uint8_t tick = 0;
 uint32_t poly = 0x82f63b78;
 
@@ -481,6 +482,8 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 	{
 		debugln("Lost connection with AP, attempting to reconnect\r\n");
 
+//		led timer on, isimt if'us
+
 		os_timer_disarm(&led_timer);
 
 		if(timer_initiated)
@@ -562,6 +565,13 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 {
 	debugln("timer_callback_lwm2m\r\n");
+
+	led_tick++;
+
+	if(led_tick % 2)
+		digitalWrite(13, HIGH);
+	else
+		digitalWrite(13, LOW);
 
 #ifdef DEBUGLN
 	debugln("Client state before step: %s\r\n", get_client_state(client_context->state));
