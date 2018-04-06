@@ -41,27 +41,21 @@ To configure device hold button for at least three seconds, until green LED star
 
 ------------------------------------------------------------------------------------------------------------------------------
 
-To view current configuration send GET request to "http://192.168.4.1:80/ap".
+To view current configuration send GET request to "http://192.168.4.1:80/ap", ex.:
+
+$ curl http://192.168.4.1:80/ap
 
 ------------------------------------------------------------------------------------------------------------------------------
 
-To keep current configuration send GET request to "http://192.168.4.1:80/keep"
+To keep current configuration send GET request to "http://192.168.4.1:80/keep", ex.:
+
+$ curl http://192.168.4.1:80/keep
 
 ------------------------------------------------------------------------------------------------------------------------------
 
 To change current configuration send POST request to "http://192.168.4.1:80/ap", with JSON payload, ex.:
 
-{
-
-  "ssid":"ap_ssid",
-  
-  "pass":"ap_password",
-  
-  "client_name":"example_client",
-  
-  "server_address":"coap://192.168.0.1:5555"
-  
-}
+$ curl http://192.168.4.1:80/ap -d '{"ssid":"ap_ssid","pass":"ap_password","client_name":"example_client","server_address":"coap://192.168.0.1:5555"}' -H 'Content-type:application/json'
 
 Password recommended at least eight characters long.
 
@@ -88,6 +82,12 @@ Red LED off: relay switched off;
 Device configured to connect to lwm2m rest server. For instructions on how to access REST interface, refer to rest server example. To control relay send PUT request with TLV package to rest server. Object ID - 3312, resource ID - 5850.
 
 Example:
+
+To turn on:
+
+$ echo -ne '\xe1\x16\xda\x01' | curl http://localhost:8888/endpoints/clientname/3312/0/5850 -X PUT -H "Content-Type: application/vnd.oma.lwm2m+tlv" --data-binary @-
+
+To turn off:
 
 $ echo -ne '\xe1\x16\xda\x00' | curl http://localhost:8888/endpoints/clientname/3312/0/5850 -X PUT -H "Content-Type: application/vnd.oma.lwm2m+tlv" --data-binary @-
 
