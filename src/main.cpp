@@ -33,7 +33,6 @@ bool st_status = false;
 bool ap_status = false;
 bool server_done = false;
 bool sta_reconnect = false;
-bool had_connected = false;
 volatile bool intr = false;
 
 ESP8266WebServer server(80);
@@ -499,7 +498,6 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 		st_status = true;
 	}
 
-	had_connected = true;
 	sta_reconnect = true;
 }
 
