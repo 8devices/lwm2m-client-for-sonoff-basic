@@ -83,8 +83,6 @@ void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg);
 void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer);
 void ICACHE_FLASH_ATTR led_timer_callback(void *pArg);
 void ICACHE_FLASH_ATTR gpio0_intr_handler(void);
-const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
-const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
 void ICACHE_FLASH_ATTR wakaama_init(void);
 void ICACHE_RAM_ATTR set_config_eeprom(struct network_info buff);
 void ICACHE_RAM_ATTR get_config_eeprom(void);
@@ -94,6 +92,10 @@ void ICACHE_RAM_ATTR handle_get(void);
 void ICACHE_RAM_ATTR handle_not_found(void);
 uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff);
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt);
+#ifdef DEBUGLN
+const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
+const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
+#endif
 
 void setup(void)
 {
@@ -279,7 +281,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 	sta_reconnect = false;
 
 	wakaama_init();
-	timer_init(&timer,5000,true);
+	timer_init(&timer,1000,true);
 
 	led_mode = 2;
 }
@@ -744,7 +746,7 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 //    bet nepapildo serveriu saraso
 
 	debugln("lwm2m_add_server\r\n");
-	status = (uint8_t)lwm2m_add_server(123, buff.wak_server, 100, false, NULL, NULL, 0);
+	status = (uint8_t)lwm2m_add_server(123, buff.wak_server, 5, false, NULL, NULL, 0);
 
 	if (!status)
 	{
