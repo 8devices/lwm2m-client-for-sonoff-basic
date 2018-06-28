@@ -95,6 +95,7 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 #ifdef DEBUGLN
 const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
 const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
+const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status);
 #endif
 
 void setup(void)
@@ -159,11 +160,13 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		sta_tick = 0;
 
-		while(WiFi.status() != WL_CONNECTED)
+		while(int status = WiFi.status() != WL_CONNECTED)
 		{
 			if(sta_tick == 19)
 			{
-				debugln("No AP with requested SSID found\r\n");
+#ifdef DEBUGLN
+				debugln("%s failed with status %s\r\n", __func__, get_wifi_fail((wl_status_t) status));
+#endif
 
 				led_mode = 3;
 
@@ -211,11 +214,13 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		sta_tick = 0;
 
-		while(WiFi.status() != WL_CONNECTED)
+		while(int status = WiFi.status() != WL_CONNECTED)
 		{
 			if(sta_tick == 19)
 			{
-				debugln("No AP with requested SSID found\r\n");
+#ifdef DEBUGLN
+				debugln("%s failed with status %s\r\n", __func__, get_wifi_fail((wl_status_t) status));
+#endif
 
 				led_mode = 3;
 
@@ -249,11 +254,13 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		sta_tick = 0;
 
-		while(WiFi.status() != WL_CONNECTED)
+		while(int status = WiFi.status() != WL_CONNECTED)
 		{
 			if(sta_tick == 19)
 			{
-				debugln("No AP with requested SSID found\r\n");
+#ifdef DEBUGLN
+				debugln("%s failed with status %s\r\n", __func__, get_wifi_fail((wl_status_t) status));
+#endif
 
 				led_mode = 3;
 
@@ -281,7 +288,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 	sta_reconnect = false;
 
 	wakaama_init();
-	timer_init(&timer,1000,true);
+	timer_init(&timer,5000,true);
 
 	led_mode = 2;
 }
@@ -476,6 +483,8 @@ void ICACHE_RAM_ATTR handle_not_found(void)
 
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt)
 {
+	noInterrupts();
+
 	if(!sta_reconnect)
 	{
 		debugln("Lost connection with AP, attempting to reconnect\r\n");
@@ -501,6 +510,7 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 	}
 
 	sta_reconnect = true;
+	interrupts();
 }
 
 void ICACHE_FLASH_ATTR debugln(const char * format, ... )
@@ -557,16 +567,18 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 
 void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 {
-	debugln("timer_callback_lwm2m\r\n");
+//	debugln("timer_callback_lwm2m\r\n");
+
+	noInterrupts();
 
 #ifdef DEBUGLN
 	debugln("Client state before step: %s\r\n", get_client_state(client_context->state));
 	if(client_context->serverList != 0)
 		debugln("Server state before step: %s\r\n", get_server_state(client_context->serverList->status));
 #endif
-
+	uint32_t before = micros();
 	uint8_t step_result = lwm2m_step(client_context, &(tv.tv_sec));
-
+	uint32_t now = micros();
 	if(step_result != 0)
 	{
 		debugln("lwm2m_step() failed: 0x%X\r\n", step_result);
@@ -582,6 +594,9 @@ void ICACHE_FLASH_ATTR timer_callback_lwm2m(void *pArg)
 	{
 		client_context->state = STATE_INITIAL;
 	}
+
+	interrupts();
+	debugln("lwm2m_step took - %u us\r\n", now - before);
 }
 
 void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer)
@@ -704,6 +719,22 @@ const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state)
 		default: return "STATE_ERROR";
 	}
 }
+
+const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status)
+{
+	switch(status)
+	{
+		case WL_NO_SHIELD: return "WL_NO_SHIELD";
+		case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
+		case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
+		case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
+		case WL_CONNECTED: return "WL_CONNECTED";
+		case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
+		case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+		case WL_DISCONNECTED: return "WL_DISCONNECTED";
+	}
+}
+
 #endif
 
 void ICACHE_FLASH_ATTR wakaama_init(void)
@@ -746,7 +777,7 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 //    bet nepapildo serveriu saraso
 
 	debugln("lwm2m_add_server\r\n");
-	status = (uint8_t)lwm2m_add_server(123, buff.wak_server, 5, false, NULL, NULL, 0);
+	status = (uint8_t)lwm2m_add_server(123, buff.wak_server, 30, false, NULL, NULL, 0);
 
 	if (!status)
 	{
