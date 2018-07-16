@@ -566,7 +566,6 @@ void ICACHE_FLASH_ATTR gpio_init(void)
 
 void ICACHE_RAM_ATTR gpio0_intr_handler(void)
 {
-	debugln("%s IS WITHIN ISR - %s\r\n", __func__, (ETS_INTR_WITHINISR())? "true" : "false");
 	debugln("%s\r\n", __func__);
 
 	digitalWrite(13, HIGH);
