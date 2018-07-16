@@ -10,7 +10,6 @@
 //SDK
 #include "osapi.h"
 #include "user_interface.h"
-#include "hw_timer.h"
 #include "queue.h"
 
 //WAKAAMA
@@ -32,11 +31,12 @@ static volatile bool wakaama_initiated = false;
 static volatile bool st_status = false;
 static volatile bool ap_status = false;
 static volatile bool server_done = false;
-static volatile bool sta_reconnect = true; //test if should be true
+static volatile bool sta_reconnect = true;
 static volatile bool intr = false;
 static volatile bool connection_loss_f = false;
 static volatile bool led_timer_f = false;
 static volatile bool had_connected = false;
+static volatile bool step_flag = false;
 
 ESP8266WebServer server(80);
 
@@ -63,6 +63,10 @@ enum
 os_timer_t timer;
 os_timer_t led_timer;
 
+#ifdef WIFIONLY
+static time_t curr_time = 0;
+#endif
+
 uint8_t led_mode = 0;
 uint8_t sta_tick = 0;
 volatile uint8_t tick = 0;
@@ -74,6 +78,9 @@ lwm2m_object_t* relay_object = nullptr;
 lwm2m_object_t* led_object = nullptr;
 
 WiFiEventHandler connection_loss;
+
+spinlock_t test_lock;
+uint16_t test_tick = 0;
 
 void ICACHE_FLASH_ATTR gpio_init(void);
 void ICACHE_FLASH_ATTR wifi_init(void);
@@ -95,12 +102,13 @@ uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff);
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt);
 void ICACHE_FLASH_ATTR connection_deinit(void);
 void ICACHE_FLASH_ATTR timer_deinit(void);
+void ICACHE_FLASH_ATTR wakaama_step(void);
 #ifdef DEBUGLN
 const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
 const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
 const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status);
 #endif
-uint16_t timer_tick = 0;
+
 void setup(void)
 {
 	Serial.begin(115200);
@@ -111,7 +119,10 @@ void setup(void)
 #ifdef DEBUGLN
 	Serial.setDebugOutput(true);
 #endif
+	system_set_os_print(1);
 	debugln("setup\r\n");
+
+	test_lock.is_locked = 0;
 
 	WiFi.persistent(false);
 	WiFi.setAutoConnect(false);
@@ -143,23 +154,23 @@ void loop(void)
 		wifi_init();
 	}
 #endif
-
 	if(connection_loss_f)
 	{
 		connection_loss_f = false;
-		noInterrupts();
 		connection_deinit();
-		interrupts();
 	}
 	if(led_timer_f)
 	{
 		led_timer_f = false;
-		noInterrupts();
 		timer_deinit();
-		interrupts();
 	}
+	if(step_flag)
+	{
+		step_flag = false;
+		wakaama_step();
+	}
+
 	yield();
-//	InterruptLock
 }
 
 
@@ -204,11 +215,6 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 			yield();
 		}
-/*
-		WiFi.setAutoConnect(false);
-
-		WiFi.setAutoReconnect(true);
-	*/
 	}
 
 
@@ -221,10 +227,6 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 		WiFi.disconnect(true);
 
 		WiFi.mode(WIFI_STA);
-
-/*		WiFi.setAutoConnect(false);
-
-		WiFi.setAutoReconnect(true);*/
 
 		while(WiFi.status() == WL_DISCONNECTED) yield();
 
@@ -299,16 +301,14 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 			yield();
 		}
-
-/*		WiFi.setAutoConnect(false);
-
-		WiFi.setAutoReconnect(true);*/
 	}
 
 	debugln("Connected\r\n");
 	sta_reconnect = false;
+#ifndef WIFIONLY
 	wakaama_init();
-	timer_init(&timer,5000,true);
+#endif
+	timer_init(&timer,2500,true);
 	led_mode = 2;
 
 	if(!had_connected)
@@ -334,10 +334,6 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void)
 	WiFi.disconnect(true);
 
 	WiFi.mode(WIFI_AP);
-
-/*	WiFi.setAutoConnect(false);
-
-	WiFi.setAutoReconnect(false);*/
 
 	while(WiFi.status() == WL_CONNECTED) yield();
 
@@ -570,6 +566,7 @@ void ICACHE_FLASH_ATTR gpio_init(void)
 
 void ICACHE_RAM_ATTR gpio0_intr_handler(void)
 {
+	debugln("%s IS WITHIN ISR - %s\r\n", __func__, (ETS_INTR_WITHINISR())? "true" : "false");
 	debugln("%s\r\n", __func__);
 
 	digitalWrite(13, HIGH);
@@ -591,11 +588,9 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 	timer_initiated = true;
 }
 
-void ICACHE_RAM_ATTR timer_callback_lwm2m(void *pArg)
+void ICACHE_FLASH_ATTR wakaama_step(void)
 {
-//	debugln("timer_callback_lwm2m\r\n");
-
-	noInterrupts();
+#ifndef WIFIONLY
 #ifdef DEBUGLN
 	if(client_context->serverList != 0)
 		debugln("Server state before step: %s\r\n", get_server_state(client_context->serverList->status));
@@ -615,9 +610,14 @@ void ICACHE_RAM_ATTR timer_callback_lwm2m(void *pArg)
 	{
 		client_context->state = STATE_INITIAL;
 	}
-//	timer_tick++;
-//	debugln("timer_callback, tick = %d\r\n", timer_tick);
-	interrupts();
+#else
+	lwm2m_gettime();
+#endif
+}
+
+void ICACHE_RAM_ATTR timer_callback_lwm2m(void *pArg)
+{
+	step_flag = true;
 }
 
 void ICACHE_FLASH_ATTR timer_deinit(void)
@@ -930,6 +930,7 @@ uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff)
 	}
 	return ~crc;
 }
+
 #ifdef LWM2M_WITH_LOGS
 void lwm2m_printf(const char * format, ...)
 {
