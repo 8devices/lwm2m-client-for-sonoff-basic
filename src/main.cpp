@@ -79,7 +79,6 @@ lwm2m_object_t* led_object = nullptr;
 
 WiFiEventHandler connection_loss;
 
-spinlock_t test_lock;
 uint16_t test_tick = 0;
 
 void ICACHE_FLASH_ATTR gpio_init(void);
@@ -107,6 +106,14 @@ void ICACHE_FLASH_ATTR wakaama_step(void);
 const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
 const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
 const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status);
+#define STR_STATE(S)                                \
+((S) == STATE_INITIAL ? "STATE_INITIAL" :      \
+((S) == STATE_BOOTSTRAP_REQUIRED ? "STATE_BOOTSTRAP_REQUIRED" :      \
+((S) == STATE_BOOTSTRAPPING ? "STATE_BOOTSTRAPPING" :  \
+((S) == STATE_REGISTER_REQUIRED ? "STATE_REGISTER_REQUIRED" :        \
+((S) == STATE_REGISTERING ? "STATE_REGISTERING" :      \
+((S) == STATE_READY ? "STATE_READY" :      \
+"Unknown"))))))
 #endif
 
 void setup(void)
@@ -121,8 +128,6 @@ void setup(void)
 #endif
 	system_set_os_print(1);
 	debugln("setup\r\n");
-
-	test_lock.is_locked = 0;
 
 	WiFi.persistent(false);
 	WiFi.setAutoConnect(false);
@@ -194,7 +199,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		while(int status = WiFi.status() != WL_CONNECTED)
 		{
-			if(sta_tick == 19)
+			if(sta_tick == 10)
 			{
 #ifdef DEBUGLN
 				debugln("%s failed with status %s\r\n", __func__, get_wifi_fail((wl_status_t) status));
@@ -240,7 +245,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		while(int status = WiFi.status() != WL_CONNECTED)
 		{
-			if(sta_tick == 19)
+			if(sta_tick == 10)
 			{
 #ifdef DEBUGLN
 				debugln("%s failed with status %s\r\n", __func__, get_wifi_fail((wl_status_t) status));
@@ -280,7 +285,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 
 		while(int status = WiFi.status() != WL_CONNECTED)
 		{
-			if(sta_tick == 19)
+			if(sta_tick == 10)
 			{
 #ifdef DEBUGLN
 				debugln("%s failed with status %s\r\n", __func__, get_wifi_fail((wl_status_t) status));
@@ -308,7 +313,7 @@ void ICACHE_FLASH_ATTR wifi_init(void)
 #ifndef WIFIONLY
 	wakaama_init();
 #endif
-	timer_init(&timer,2500,true);
+	timer_init(&timer, 3000,true);
 	led_mode = 2;
 
 	if(!had_connected)
@@ -593,6 +598,7 @@ void ICACHE_FLASH_ATTR wakaama_step(void)
 #ifdef DEBUGLN
 	if(client_context->serverList != 0)
 		debugln("Server state before step: %s\r\n", get_server_state(client_context->serverList->status));
+    debugln("Client state before step: %s\r\n", STR_STATE(client_context->state));
 #endif
 	uint8_t step_result = lwm2m_step(client_context, &(tv.tv_sec));
 	if(step_result != 0)
@@ -603,6 +609,7 @@ void ICACHE_FLASH_ATTR wakaama_step(void)
 #ifdef DEBUGLN
 	if(client_context->serverList != 0)
 		debugln("Server state after step: %s\r\n", get_server_state(client_context->serverList->status));
+	debugln("Client state after step: %s\r\n", STR_STATE(client_context->state));
 #endif
 
 	if(client_context->state == STATE_BOOTSTRAP_REQUIRED)
