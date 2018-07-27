@@ -13,11 +13,11 @@
 #include "queue.h"
 
 //WAKAAMA
-#include "relay_object.h"
-#include "wakaama/internals.h"
-#include "wakaama_network.h"
-#include "wakaama_object_utils.h"
-#include "wakaama_simple_client.h"
+#include "internal_objects.h"
+#include "internal.h"
+#include "lwm2m/c_connect.h"
+#include "lwm2m/debug.h"
+#include "lwm2mObjects/3312.h"
 
 //ARDUINO
 #include <ESP8266WiFi.h>
@@ -72,10 +72,14 @@ uint8_t sta_tick = 0;
 volatile uint8_t tick = 0;
 uint32_t poly = 0x82f63b78;
 
-lwm2m_context_t *client_context = nullptr;
-device_instance_t * device_data = nullptr;
-lwm2m_object_t* relay_object = nullptr;
-lwm2m_object_t* led_object = nullptr;
+using namespace KnownObjects;
+
+lwm2m_client_context_t client_context;
+id3312::object relay;
+id3312::instance relayinst;
+//device_instance_t * device_data = nullptr;
+//lwm2m_object_t* relay_object = nullptr;
+//lwm2m_object_t* led_object = nullptr;
 
 WiFiEventHandler connection_loss;
 
@@ -84,36 +88,28 @@ uint16_t test_tick = 0;
 void ICACHE_FLASH_ATTR gpio_init(void);
 void ICACHE_FLASH_ATTR wifi_init(void);
 void ICACHE_FLASH_ATTR wifi_ap_init(void);
-void ICACHE_RAM_ATTR debugln(const char * format, ... );
+extern "C" void ICACHE_FLASH_ATTR debugln(const char * format, ... );
 void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool repeat);
 void ICACHE_RAM_ATTR timer_callback_lwm2m(void *pArg);
 void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer);
 void ICACHE_RAM_ATTR led_timer_callback(void *pArg);
 void ICACHE_RAM_ATTR gpio0_intr_handler(void);
 void ICACHE_FLASH_ATTR wakaama_init(void);
-void ICACHE_RAM_ATTR set_config_eeprom(struct network_info buff);
-void ICACHE_RAM_ATTR get_config_eeprom(void);
+void ICACHE_FLASH_ATTR set_config_eeprom(struct network_info buff);
+void ICACHE_FLASH_ATTR get_config_eeprom(void);
 void ICACHE_FLASH_ATTR httpserver(void);
 void ICACHE_RAM_ATTR handle_post(void);
 void ICACHE_RAM_ATTR handle_get(void);
 void ICACHE_RAM_ATTR handle_not_found(void);
-uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff);
+uint32_t ICACHE_FLASH_ATTR gen_crc(const network_info *buff);
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt);
 void ICACHE_FLASH_ATTR connection_deinit(void);
 void ICACHE_FLASH_ATTR timer_deinit(void);
 void ICACHE_FLASH_ATTR wakaama_step(void);
 #ifdef DEBUGLN
-const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
-const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
+//const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state);
+//const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state);
 const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status);
-#define STR_STATE(S)                                \
-((S) == STATE_INITIAL ? "STATE_INITIAL" :      \
-((S) == STATE_BOOTSTRAP_REQUIRED ? "STATE_BOOTSTRAP_REQUIRED" :      \
-((S) == STATE_BOOTSTRAPPING ? "STATE_BOOTSTRAPPING" :  \
-((S) == STATE_REGISTER_REQUIRED ? "STATE_REGISTER_REQUIRED" :        \
-((S) == STATE_REGISTERING ? "STATE_REGISTERING" :      \
-((S) == STATE_READY ? "STATE_READY" :      \
-"Unknown"))))))
 #endif
 
 void setup(void)
@@ -177,7 +173,6 @@ void loop(void)
 
 	yield();
 }
-
 
 void ICACHE_FLASH_ATTR wifi_init(void)
 {
@@ -518,8 +513,7 @@ void ICACHE_FLASH_ATTR connection_deinit(void)
 
 		if(wakaama_initiated)
 		{
-			lwm2m_client_close();
-			lwm2m_network_close(client_context);
+			lwm2m_client_close(&client_context);
 			wakaama_initiated = false;
 		}
 
@@ -539,7 +533,7 @@ void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnec
 }
 
 #ifdef DEBUGLN
-void ICACHE_RAM_ATTR debugln(const char * format, ... )
+extern "C" void ICACHE_FLASH_ATTR debugln(const char * format, ... )
 {
   char buffer[256];
   va_list args;
@@ -595,27 +589,14 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 void ICACHE_FLASH_ATTR wakaama_step(void)
 {
 #ifndef WIFIONLY
-#ifdef DEBUGLN
-	if(client_context->serverList != 0)
-		debugln("Server state before step: %s\r\n", get_server_state(client_context->serverList->status));
-    debugln("Client state before step: %s\r\n", STR_STATE(client_context->state));
-#endif
-	uint8_t step_result = lwm2m_step(client_context, &(tv.tv_sec));
-	if(step_result != 0)
-	{
-		debugln("lwm2m_step() failed: 0x%X\r\n", step_result);
-	}
-
-#ifdef DEBUGLN
-	if(client_context->serverList != 0)
-		debugln("Server state after step: %s\r\n", get_server_state(client_context->serverList->status));
-	debugln("Client state after step: %s\r\n", STR_STATE(client_context->state));
-#endif
-
-	if(client_context->state == STATE_BOOTSTRAP_REQUIRED)
-	{
-		client_context->state = STATE_INITIAL;
-	}
+	debugln("Before process\r\n");
+	print_state(CTX(client_context));
+	int result = lwm2m_process(CTX(client_context), &tv);
+	if(result != 0)
+		debugln("lwm2m_process failed with status 0x%02x\r\n", result);
+	debugln("After process\r\n");
+	print_state(CTX(client_context));
+	lwm2m_watch_and_reconnect(CTX(client_context), &tv, 20);
 #else
 	lwm2m_gettime();
 #endif
@@ -637,8 +618,7 @@ void ICACHE_FLASH_ATTR timer_deinit(void)
 
 	if(wakaama_initiated)
 	{
-		lwm2m_client_close();
-		lwm2m_network_close(client_context);
+		lwm2m_client_close(&client_context);
 		wakaama_initiated = false;
 	}
 	digitalWrite(13, HIGH);
@@ -708,42 +688,42 @@ void ICACHE_RAM_ATTR led_timer_callback(void *pArg)
 }
 
 #ifdef DEBUGLN
-const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state)
-{
-	switch(state)
-	{
-		case STATE_INITIAL: return "STATE_INITIAL";
-		case STATE_BOOTSTRAP_REQUIRED: return "STATE_BOOTSTRAP_REQUIRED";
-		case STATE_BOOTSTRAPPING: return "STATE_BOOTSTRAPPING";
-		case STATE_REGISTER_REQUIRED: return "STATE_REGISTER_REQUIRED";
-		case STATE_REGISTERING: return "STATE_REGISTERING";
-		case STATE_READY: return "STATE_READY";
-		default: return "STATE_ERROR";
-	}
-}
-
-const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state)
-{
-	switch(state)
-	{
-		case STATE_DEREGISTERED: return "STATE_DEREGISTERED";
-		case STATE_REG_PENDING: return "STATE_REG_PENDING";
-		case STATE_REGISTERED: return "STATE_REGISTERED";
-		case STATE_REG_FAILED: return "STATE_REG_FAILED";
-		case STATE_REG_UPDATE_PENDING: return "STATE_REG_UPDATE_PENDING";
-		case STATE_REG_UPDATE_NEEDED: return "STATE_REG_UPDATE_NEEDED";
-		case STATE_REG_FULL_UPDATE_NEEDED: return "STATE_REG_FULL_UPDATE_NEEDED";
-		case STATE_DEREG_PENDING: return "STATE_DEREG_PENDING";
-		case STATE_BS_HOLD_OFF: return "STATE_BS_HOLD_OFF";
-		case STATE_BS_INITIATED: return "STATE_BS_INITIATED";
-		case STATE_BS_PENDING: return "STATE_BS_PENDING";
-		case STATE_BS_FINISHING: return "STATE_BS_FINISHING";
-		case STATE_BS_FINISHED: return "STATE_BS_FINISHED";
-		case STATE_BS_FAILING: return "STATE_BS_FAILING";
-		case STATE_BS_FAILED: return "STATE_BS_FAILED";
-		default: return "STATE_ERROR";
-	}
-}
+//const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state)
+//{
+//	switch(state)
+//	{
+//		case STATE_INITIAL: return "STATE_INITIAL";
+//		case STATE_BOOTSTRAP_REQUIRED: return "STATE_BOOTSTRAP_REQUIRED";
+//		case STATE_BOOTSTRAPPING: return "STATE_BOOTSTRAPPING";
+//		case STATE_REGISTER_REQUIRED: return "STATE_REGISTER_REQUIRED";
+//		case STATE_REGISTERING: return "STATE_REGISTERING";
+//		case STATE_READY: return "STATE_READY";
+//		default: return "STATE_ERROR";
+//	}
+//}
+//
+//const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state)
+//{
+//	switch(state)
+//	{
+//		case STATE_DEREGISTERED: return "STATE_DEREGISTERED";
+//		case STATE_REG_PENDING: return "STATE_REG_PENDING";
+//		case STATE_REGISTERED: return "STATE_REGISTERED";
+//		case STATE_REG_FAILED: return "STATE_REG_FAILED";
+//		case STATE_REG_UPDATE_PENDING: return "STATE_REG_UPDATE_PENDING";
+//		case STATE_REG_UPDATE_NEEDED: return "STATE_REG_UPDATE_NEEDED";
+//		case STATE_REG_FULL_UPDATE_NEEDED: return "STATE_REG_FULL_UPDATE_NEEDED";
+//		case STATE_DEREG_PENDING: return "STATE_DEREG_PENDING";
+//		case STATE_BS_HOLD_OFF: return "STATE_BS_HOLD_OFF";
+//		case STATE_BS_INITIATED: return "STATE_BS_INITIATED";
+//		case STATE_BS_PENDING: return "STATE_BS_PENDING";
+//		case STATE_BS_FINISHING: return "STATE_BS_FINISHING";
+//		case STATE_BS_FINISHED: return "STATE_BS_FINISHED";
+//		case STATE_BS_FAILING: return "STATE_BS_FAILING";
+//		case STATE_BS_FAILED: return "STATE_BS_FAILED";
+//		default: return "STATE_ERROR";
+//	}
+//}
 
 const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status)
 {
@@ -757,6 +737,7 @@ const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status)
 		case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
 		case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
 		case WL_DISCONNECTED: return "WL_DISCONNECTED";
+		default: return "WL_STATE_UNDEFINED";
 	}
 }
 
@@ -766,57 +747,42 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 {
 	get_config_eeprom();
 
-	device_data = lwm2m_device_data_get();
-	device_data->manufacturer = "test manufacturer";
-	device_data->model_name = "test model";
-	device_data->device_type = "sensor";
-	device_data->firmware_ver = "1.0";
-	device_data->serial_number = "140234-645235-12353";
+	client_context.deviceInstance.manufacturer = "test manufacturer";
+	client_context.deviceInstance.model_name = "test model";
+	client_context.deviceInstance.device_type = "sensor";
+	client_context.deviceInstance.firmware_ver = "1.0";
+	client_context.deviceInstance.serial_number = "140234-645235-12353";
+#ifdef LWM2M_DEVICE_INFO_WITH_TIME
+//	client_context.deviceInstance.time_offset = 3;
+//	client_context.deviceInstance.timezone = "+03:00";
+#endif
 
-//    sukuria security, server ir device objektus, ideda juos i kliento
-//    objektu sarasa
+	relay.verifyWrite = [](id3312::instance* i, uint16_t res_id)
+	{
+		if(i->id == 0 && res_id == id3312::RESID::OnOff)
+		{
+			digitalWrite(12, i->OnOff);
+		}
+		return true;
+	};
+	relayinst.id = 0;
+	relay.addInstance(CTX(client_context), &relayinst);
+	relay.registerObject(CTX(client_context), false);
 
 	debugln("lwm2m_client_init\r\n");
-	client_context = lwm2m_client_init(buff.wak_client_name);
-
-	if (client_context == 0)
-	{
+	if(!lwm2m_client_init(&client_context, buff.wak_client_name))
 		debugln("Failed to initialize wakaama\r\n");
-	}
-
-	// Create objects
-	relay_object = lwm2m_object_create(3312, false, relay_object_get_meta());
-	lwm2m_object_instances_add(relay_object, relay_object_create_instance());
-	lwm2m_add_object(client_context, relay_object);
-
-//    sukuria network struktura, papildo kliento objekto userData lauka
-
-	debugln("lwm2m_network_init\r\n");
-	uint8_t status = lwm2m_network_init(client_context, NULL);
-	if (status == 0)
-	{
-		debugln("Failed to open socket\r\n");
-	}
-
-//    paima objektu sarasa ir sukuria objektu instances, paskirsto atminti
-//    bet nepapildo serveriu saraso
 
 	debugln("lwm2m_add_server\r\n");
-	status = (uint8_t)lwm2m_add_server(123, buff.wak_server, 30, false, NULL, NULL, 0);
-
-	if (!status)
-	{
+	if(!lwm2m_add_server(CTX(client_context), 123, buff.wak_server, 30, false))
 		debugln("Failed to add server\r\n");
-	}
 
 	tv.tv_sec = 60;
-
 	tv.tv_usec = 0;
-
 	wakaama_initiated = true;
 }
 
-void ICACHE_RAM_ATTR set_config_eeprom(struct network_info buf)
+void ICACHE_FLASH_ATTR set_config_eeprom(struct network_info buf)
 {
 	char crc[4];
 
@@ -858,7 +824,7 @@ void ICACHE_RAM_ATTR set_config_eeprom(struct network_info buf)
 	EEPROM.commit();
 }
 
-void ICACHE_RAM_ATTR get_config_eeprom(void)
+void ICACHE_FLASH_ATTR get_config_eeprom(void)
 {
 	size_t max = EEPROM.length();
 	uint8_t crc[4];
@@ -911,7 +877,7 @@ void ICACHE_RAM_ATTR get_config_eeprom(void)
 	buff.crc = (*(uint32_t*)(crc));
 }
 
-uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff)
+uint32_t ICACHE_FLASH_ATTR gen_crc(const network_info *buff)
 {
 	uint8_t len = (sizeof(buff->sta_pass) + sizeof(buff->sta_ssid) + sizeof(buff->wak_client_name) + sizeof(buff->wak_server)) / 4;
 
@@ -936,7 +902,6 @@ uint32_t ICACHE_RAM_ATTR gen_crc(const network_info *buff)
 	}
 	return ~crc;
 }
-
 #ifdef LWM2M_WITH_LOGS
 void lwm2m_printf(const char * format, ...)
 {
