@@ -6,7 +6,7 @@
 #define LWM2M_CLIENT_MODE
 
 #define LWM2M_WITH_LOGS
-#define LWM2M_NETWORK_LOGGING
+//#define LWM2M_NETWORK_LOGGING
 
 // Enable json support
 //#define LWM2M_SUPPORT_JSON

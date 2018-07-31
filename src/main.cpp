@@ -434,16 +434,14 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 void ICACHE_FLASH_ATTR wakaama_step(void)
 {
 #ifndef WIFIONLY
-//	debugln("Before process\r\n");
-//	print_state(CTX(client_context));
+	debugln("Time: %u\r\n", lwm2m_gettime());
+	print_state(CTX(client_context));
 	int result = lwm2m_process(CTX(client_context), &tv);
 	if(result != 0)
 		debugln("lwm2m_process failed with status 0x%02x\r\n", result);
-//	debugln("After process\r\n");
-//	print_state(CTX(client_context));
 	lwm2m_watch_and_reconnect(CTX(client_context), &tv, 20);
 #else
-	lwm2m_gettime();
+	debugln("Time: %u\r\n", lwm2m_gettime());
 #endif
 }
 
