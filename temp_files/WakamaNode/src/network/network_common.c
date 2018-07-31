@@ -228,7 +228,6 @@ uint8_t lwm2m_buffer_send(void * sessionH,
                           size_t length,
                           void * userdata)
 {
-	printf("%s 1\r\n", __func__);
     (void)userdata;
     connection_t * connection = (connection_t*) sessionH;
 
@@ -237,7 +236,7 @@ uint8_t lwm2m_buffer_send(void * sessionH,
         network_log_error("failed sending %lu bytes, missing connection\r\n", (long unsigned)length);
         return COAP_500_INTERNAL_SERVER_ERROR ;
     }
-	printf("%s 3\r\n", __func__);
+
     int r;
     #ifdef LWM2M_WITH_DTLS
     if (connection->dtls) {
@@ -247,7 +246,6 @@ uint8_t lwm2m_buffer_send(void * sessionH,
         r = mbedtls_net_send(connection, (const unsigned char*)buffer, length);
     }
     #else
-	printf("%s 4\r\n", __func__);
     r = mbedtls_net_send(connection, (const unsigned char*)buffer, length);
     #endif
     return r>=0 ? COAP_NO_ERROR : COAP_503_SERVICE_UNAVAILABLE;

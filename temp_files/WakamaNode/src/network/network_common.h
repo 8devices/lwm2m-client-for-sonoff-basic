@@ -28,8 +28,8 @@
     #endif
 #endif
 
-#ifdef LWM2M_WITH_DTLS
 #include "mbedtls/ssl.h"
+#ifdef LWM2M_WITH_DTLS
 #include "mbedtls/ssl_cookie.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
@@ -140,7 +140,7 @@ bool ip_equal(addr_t a, addr_t b);
 #ifdef LWM2M_NETWORK_LOGGING
 void connection_log_io(connection_t* conn, int length, bool sending);
 #define network_log_info(...) fprintf(stdout, __VA_ARGS__)
-#define network_log_error(...) fprintf(stdout, __VA_ARGS__)
+#define network_log_error(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define connection_log_io(...) {}
 #define network_log_info(...)

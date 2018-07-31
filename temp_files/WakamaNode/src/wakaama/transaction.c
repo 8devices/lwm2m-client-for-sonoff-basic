@@ -341,12 +341,10 @@ bool transaction_handleResponse(lwm2m_context_t * contextP,
 int transaction_send(lwm2m_context_t * contextP,
                      lwm2m_transaction_t * transacP)
 {
-	printf("%s 1\r\n", __func__);
     bool maxRetriesReached = false;
 
     if (transacP->buffer == NULL)
     {
-    	printf("%s 2\r\n", __func__);
         transacP->buffer_len = coap_serialize_get_size(transacP->message);
         if (transacP->buffer_len == 0)
         {
@@ -370,10 +368,9 @@ int transaction_send(lwm2m_context_t * contextP,
             return COAP_500_INTERNAL_SERVER_ERROR;
         }
     }
-	printf("%s 3\r\n", __func__);
+
     if (!transacP->ack_received)
     {
-    	printf("%s 4\r\n", __func__);
         long unsigned timeout=0;
 
         if (0 == transacP->retrans_counter)
@@ -406,10 +403,9 @@ int transaction_send(lwm2m_context_t * contextP,
             maxRetriesReached = true;
         }
     }
-	printf("%s 5\r\n", __func__);
+
     if (transacP->ack_received || maxRetriesReached)
     {
-    	printf("%s 6\r\n", __func__);
         if (transacP->callback)
         {
             transacP->callback(transacP, NULL);
@@ -417,7 +413,7 @@ int transaction_send(lwm2m_context_t * contextP,
         transaction_remove(contextP, transacP);
         return -1;
     }
-	printf("%s 7\r\n", __func__);
+
     return 0;
 }
 

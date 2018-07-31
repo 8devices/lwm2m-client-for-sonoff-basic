@@ -152,7 +152,8 @@ LWIPAPPFILES=$(SNMPFILES) \
 	$(TFTPFILES) \
 	$(MQTTFILES)
 	
-LWIPAPPFILESO=$(patsubst %.c,%.o,$(LWIPAPPFILES))
+LWIPNOAPPSFILESO=$(patsubst %.c,%.o,$(LWIPNOAPPSFILES))
+LWIPNOAPPSFILESD=$(patsubst %.c,%.d,$(LWIPNOAPPSFILES))
 	
 	
 TOOLCHAIN_DIR ?= /home/tautvydas/.platformio/packages/toolchain-xtensa
@@ -167,13 +168,8 @@ LIB_PATH ?= $(SDK_PATH)/tools/sdk/lib
 #LWIP_SRCS = $(patsubst %.c,$(BUILD_PATH)/%.o,$(wildcard */*.c)) $(patsubst %.c,$(BUILD_PATH)/%.o,$(wildcard */*/*.c))
 
 LWIP_INCLUDE = -I$(LWIPDIR)/include
-#BUILD_FLAGS = -c -Os -g -Wpointer-arith -Wno-implicit-function-declaration -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals -falign-functions=4 -MMD -std=gnu99 -ffunction-sections -fdata-sections
-#BUILD_DEFINES = -D__ets__ -DICACHE_FLASH -U__STRICT_ANSI__ -DLWIP_OPEN_SRC
-BUILD_FLAGS =
-BUILD_DEFINES =
-
-$(LWIPAPPFILESO): %.o : %.c
-	$(CC) $(BUILD_FLAGS) $(BUILD_DEFINES) $(LWIP_INCLUDE) $< -o $@
+BUILD_FLAGS = -c -Os -g -Wpointer-arith -Wno-implicit-function-declaration -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals -falign-functions=4 -MMD -std=gnu99 -ffunction-sections -fdata-sections
+BUILD_DEFINES = -D__ets__ -DICACHE_FLASH -U__STRICT_ANSI__ -DLWIP_OPEN_SRC
 
 #$(BUILD_PATH)/%.h:
 #	@mkdir -p $(dir $@)
@@ -183,14 +179,21 @@ $(LWIPAPPFILESO): %.o : %.c
 #	@mkdir -p $(dir $@)
 #	$(CC) $(BUILD_FLAGS) $(BUILD_DEFINES) $(LWIP_INCLUDE) $(EXTRA_FLAGS) $< -o $@
 #
-$(LWIP_LIB): $(LWIPAPPFILESO)
-	$(AR) cru $(LWIP_LIB) $(LWIPAPPFILESO)
+
+$(LWIPNOAPPSFILESO): %.o : %.c
+	$(CC) $(BUILD_FLAGS) $(BUILD_DEFINES) $(LWIP_INCLUDE) -c $< -o $@
+
+$(LWIP_LIB): $(LWIPNOAPPSFILESO)
+	$(AR) cru $@ $(LWIPNOAPPSFILESO)
 
 all: $(LWIP_LIB)
 
+.PHONY: install
 install: all
 	cp -f $(LWIP_LIB) $(LIB_PATH)/$(LWIP_LIB)
 
+.PHONY: clean
 clean:
-	@rm -rf $(LWIPAPPFILESO) $(LWIP_LIB)
+	@rm -rf $(LWIPNOAPPSFILESO) $(LWIP_LIB) $(LWIPNOAPPSFILESD)
 
+	

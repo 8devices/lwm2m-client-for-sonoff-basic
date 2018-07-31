@@ -21,16 +21,16 @@
 
 //ARDUINO
 #include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <Arduino.h>
-#include <ArduinoJson.h>
+
+//USER
+#include "user_functions.h"
 
 static volatile bool timer_initiated = false;
 static volatile bool wakaama_initiated = false;
 static volatile bool st_status = false;
 static volatile bool ap_status = false;
-static volatile bool server_done = false;
 static volatile bool sta_reconnect = true;
 static volatile bool intr = false;
 static volatile bool connection_loss_f = false;
@@ -38,18 +38,9 @@ static volatile bool led_timer_f = false;
 static volatile bool had_connected = false;
 static volatile bool step_flag = false;
 
-ESP8266WebServer server(80);
-
 struct timeval tv;
 
-struct network_info
-{
-	uint32_t crc;
-	char sta_ssid[32];
-	char sta_pass[64];
-	char wak_server[64];
-	char wak_client_name[32];
-}buff;
+struct network_info buff;
 
 enum
 {
@@ -70,7 +61,6 @@ static time_t curr_time = 0;
 uint8_t led_mode = 0;
 uint8_t sta_tick = 0;
 volatile uint8_t tick = 0;
-uint32_t poly = 0x82f63b78;
 
 using namespace KnownObjects;
 
@@ -88,20 +78,12 @@ uint16_t test_tick = 0;
 void ICACHE_FLASH_ATTR gpio_init(void);
 void ICACHE_FLASH_ATTR wifi_init(void);
 void ICACHE_FLASH_ATTR wifi_ap_init(void);
-extern "C" void ICACHE_FLASH_ATTR debugln(const char * format, ... );
 void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool repeat);
 void ICACHE_RAM_ATTR timer_callback_lwm2m(void *pArg);
 void ICACHE_FLASH_ATTR led_timer_init(os_timer_t *ptimer);
 void ICACHE_RAM_ATTR led_timer_callback(void *pArg);
 void ICACHE_RAM_ATTR gpio0_intr_handler(void);
 void ICACHE_FLASH_ATTR wakaama_init(void);
-void ICACHE_FLASH_ATTR set_config_eeprom(struct network_info buff);
-void ICACHE_FLASH_ATTR get_config_eeprom(void);
-void ICACHE_FLASH_ATTR httpserver(void);
-void ICACHE_RAM_ATTR handle_post(void);
-void ICACHE_RAM_ATTR handle_get(void);
-void ICACHE_RAM_ATTR handle_not_found(void);
-uint32_t ICACHE_FLASH_ATTR gen_crc(const network_info *buff);
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt);
 void ICACHE_FLASH_ATTR connection_deinit(void);
 void ICACHE_FLASH_ATTR timer_deinit(void);
@@ -170,7 +152,6 @@ void loop(void)
 		step_flag = false;
 		wakaama_step();
 	}
-
 	yield();
 }
 
@@ -362,142 +343,6 @@ void ICACHE_FLASH_ATTR wifi_ap_init(void)
 	attachInterrupt(digitalPinToInterrupt(0), gpio0_intr_handler, FALLING);
 }
 
-void ICACHE_FLASH_ATTR httpserver(void)
-{
-	server_done = false;
-
-	server.on("/ap", HTTP_POST, handle_post);
-	server.on("/ap", HTTP_GET, handle_get);
-	server.on("/keep", [](){
-
-		server.send(200, "text/plain", "Keeping current configuration\r\n");
-
-		server_done = true;
-	});
-	server.onNotFound(handle_not_found);
-	server.begin();
-
-	while(!server_done)
-	{
-		server.handleClient();
-		delay(100);
-		yield();
-	}
-
-	server.stop();
-}
-
-void ICACHE_RAM_ATTR handle_post(void)
-{
-	debugln("POST request\r\n");
-
-	WiFiClient client = server.client();
-
-	StaticJsonBuffer<200> jsonBuffer;
-
-	JsonObject &root = jsonBuffer.parseObject(server.arg("plain"));
-
-	client.flush();
-
-	if(!root.success())
-	{
-		debugln("Couldn't parse buffer\r\n");
-		server.send(500, "text/plain", "Couldn't parse buffer\r\n");
-		return;
-	}
-
-	if(!(root.containsKey("ssid") && root.containsKey("pass") && root.containsKey("client_name") && root.containsKey("server_address")))
-	{
-		debugln("One or more JSON attributes missing\r\n");
-		server.send(400, "text/plain", "One or more JSON attributes missing\r\n");
-		return;
-	}
-
-	else if(root["ssid"] == "" || root["pass"] == "" || root["client_name"] == "" || root["server_address"] == "")
-	{
-		debugln("One or more JSON attributes value empty\r\n");
-		server.send(400, "text/plain", "One or more JSON attributes value empty\r\n");
-		return;
-	}
-
-	struct network_info buf;
-
-	strncpy(buf.sta_ssid, root["ssid"], sizeof(buf.sta_ssid));
-	strncpy(buf.sta_pass, root["pass"], sizeof(buf.sta_pass));
-	strncpy(buf.wak_client_name, root["client_name"], sizeof(buf.wak_client_name));
-	strncpy(buf.wak_server, root["server_address"], sizeof(buf.wak_server));
-	buf.crc = gen_crc(&buf);
-
-	set_config_eeprom(buf);
-
-	server.send(200, "text/plain", "Configuration set, device switching to station mode\r\n");
-
-	server_done = true;
-}
-
-void ICACHE_RAM_ATTR handle_get(void)
-{
-	debugln("GET request\r\n");
-
-	WiFiClient client = server.client();
-
-	client.flush();
-
-	String message = "";
-
-	get_config_eeprom();
-
-	if(gen_crc(&buff) != buff.crc)
-	{
-		debugln("CRC doesn't match\r\n");
-		debugln("CRC: 0x%08x\r\n", buff.crc);
-
-		message += "Device memory corrupt, reconfigure with POST request\r\n\r\n";
-
-		message += "To change current config send http POST message with JSON body. Example:\r\n";
-		message += "\r\n";
-		message += "	{\r\n";
-		message += "	\"ssid\": \"wifiap\",\r\n";
-		message += "	\"pass\": \"wifipass\",\r\n";
-		message += "	\"server_address\": \"coap://192.168.0.1:11\",\r\n";
-		message += "	\"client_name\": \"device1\"\r\n";
-		message += "	}\r\n";
-
-		server.send(500, "text/plain", message);
-
-		return;
-	}
-
-	char buffer[50];
-
-	message = "";
-
-	message += "Current config:\r\n";
-	sprintf(buffer, "	connect to AP: SSID - %s\r\n", buff.sta_ssid);
-	message += buffer;
-	sprintf(buffer, "	lwm2m server address - %s\r\n", buff.wak_server);
-	message += buffer;
-	sprintf(buffer, "	lwm2m client name - %s\r\n", buff.wak_client_name);
-	message += buffer;
-	message += "\r\n";
-	message += "To change current config send http POST message with JSON body. Example:\r\n";
-	message += "\r\n";
-	message += "	{\r\n";
-	message += "	\"ssid\": \"wifiap\",\r\n";
-	message += "	\"pass\": \"wifipass\",\r\n";
-	message += "	\"server_address\": \"coap://192.168.0.1:11\",\r\n";
-	message += "	\"client_name\": \"device1\"\r\n";
-	message += "	}\r\n";
-
-
-	server.send(200, "text/plain", message);
-}
-
-void ICACHE_RAM_ATTR handle_not_found(void)
-{
-	server.send(404, "text/plain", "Path not found\r\n");
-}
-
 void ICACHE_FLASH_ATTR connection_deinit(void)
 {
 	debugln("%s\r\n", __func__);
@@ -589,13 +434,13 @@ void ICACHE_FLASH_ATTR timer_init(os_timer_t *ptimer,uint32_t milliseconds, bool
 void ICACHE_FLASH_ATTR wakaama_step(void)
 {
 #ifndef WIFIONLY
-	debugln("Before process\r\n");
-	print_state(CTX(client_context));
+//	debugln("Before process\r\n");
+//	print_state(CTX(client_context));
 	int result = lwm2m_process(CTX(client_context), &tv);
 	if(result != 0)
 		debugln("lwm2m_process failed with status 0x%02x\r\n", result);
-	debugln("After process\r\n");
-	print_state(CTX(client_context));
+//	debugln("After process\r\n");
+//	print_state(CTX(client_context));
 	lwm2m_watch_and_reconnect(CTX(client_context), &tv, 20);
 #else
 	lwm2m_gettime();
@@ -688,43 +533,6 @@ void ICACHE_RAM_ATTR led_timer_callback(void *pArg)
 }
 
 #ifdef DEBUGLN
-//const char* ICACHE_FLASH_ATTR get_client_state(lwm2m_client_state_t state)
-//{
-//	switch(state)
-//	{
-//		case STATE_INITIAL: return "STATE_INITIAL";
-//		case STATE_BOOTSTRAP_REQUIRED: return "STATE_BOOTSTRAP_REQUIRED";
-//		case STATE_BOOTSTRAPPING: return "STATE_BOOTSTRAPPING";
-//		case STATE_REGISTER_REQUIRED: return "STATE_REGISTER_REQUIRED";
-//		case STATE_REGISTERING: return "STATE_REGISTERING";
-//		case STATE_READY: return "STATE_READY";
-//		default: return "STATE_ERROR";
-//	}
-//}
-//
-//const char* ICACHE_FLASH_ATTR get_server_state(lwm2m_status_t state)
-//{
-//	switch(state)
-//	{
-//		case STATE_DEREGISTERED: return "STATE_DEREGISTERED";
-//		case STATE_REG_PENDING: return "STATE_REG_PENDING";
-//		case STATE_REGISTERED: return "STATE_REGISTERED";
-//		case STATE_REG_FAILED: return "STATE_REG_FAILED";
-//		case STATE_REG_UPDATE_PENDING: return "STATE_REG_UPDATE_PENDING";
-//		case STATE_REG_UPDATE_NEEDED: return "STATE_REG_UPDATE_NEEDED";
-//		case STATE_REG_FULL_UPDATE_NEEDED: return "STATE_REG_FULL_UPDATE_NEEDED";
-//		case STATE_DEREG_PENDING: return "STATE_DEREG_PENDING";
-//		case STATE_BS_HOLD_OFF: return "STATE_BS_HOLD_OFF";
-//		case STATE_BS_INITIATED: return "STATE_BS_INITIATED";
-//		case STATE_BS_PENDING: return "STATE_BS_PENDING";
-//		case STATE_BS_FINISHING: return "STATE_BS_FINISHING";
-//		case STATE_BS_FINISHED: return "STATE_BS_FINISHED";
-//		case STATE_BS_FAILING: return "STATE_BS_FAILING";
-//		case STATE_BS_FAILED: return "STATE_BS_FAILED";
-//		default: return "STATE_ERROR";
-//	}
-//}
-
 const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status)
 {
 	switch(status)
@@ -740,34 +548,11 @@ const char* ICACHE_FLASH_ATTR get_wifi_fail(wl_status_t status)
 		default: return "WL_STATE_UNDEFINED";
 	}
 }
-
 #endif
 
 void ICACHE_FLASH_ATTR wakaama_init(void)
 {
 	get_config_eeprom();
-
-	client_context.deviceInstance.manufacturer = "test manufacturer";
-	client_context.deviceInstance.model_name = "test model";
-	client_context.deviceInstance.device_type = "sensor";
-	client_context.deviceInstance.firmware_ver = "1.0";
-	client_context.deviceInstance.serial_number = "140234-645235-12353";
-#ifdef LWM2M_DEVICE_INFO_WITH_TIME
-//	client_context.deviceInstance.time_offset = 3;
-//	client_context.deviceInstance.timezone = "+03:00";
-#endif
-
-	relay.verifyWrite = [](id3312::instance* i, uint16_t res_id)
-	{
-		if(i->id == 0 && res_id == id3312::RESID::OnOff)
-		{
-			digitalWrite(12, i->OnOff);
-		}
-		return true;
-	};
-	relayinst.id = 0;
-	relay.addInstance(CTX(client_context), &relayinst);
-	relay.registerObject(CTX(client_context), false);
 
 	debugln("lwm2m_client_init\r\n");
 	if(!lwm2m_client_init(&client_context, buff.wak_client_name))
@@ -777,131 +562,34 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 	if(!lwm2m_add_server(CTX(client_context), 123, buff.wak_server, 30, false))
 		debugln("Failed to add server\r\n");
 
+	client_context.deviceInstance.manufacturer = "test manufacturer";
+	client_context.deviceInstance.model_name = "test model";
+	client_context.deviceInstance.device_type = "sensor";
+	client_context.deviceInstance.firmware_ver = "1.0";
+	client_context.deviceInstance.serial_number = "140234-645235-12353";
+#ifdef LWM2M_DEVICE_INFO_WITH_TIME
+	client_context.deviceInstance.time_offset = 3;
+	client_context.deviceInstance.timezone = "+03:00";
+#endif
+
+	relay.verifyWrite = [](id3312::instance* i, uint16_t res_id)
+	{
+		if(i->id == 0 && res_id == id3312::RESID::OnOff)
+		{
+			debugln("/3312/0/5850 write = %d\r\n", i->OnOff);
+			digitalWrite(12, i->OnOff);
+		}
+		return true;
+	};
+	relayinst.id = 0;
+	relay.addInstance(CTX(client_context), &relayinst);
+	relay.registerObject(CTX(client_context), false);
+
 	tv.tv_sec = 60;
 	tv.tv_usec = 0;
 	wakaama_initiated = true;
 }
 
-void ICACHE_FLASH_ATTR set_config_eeprom(struct network_info buf)
-{
-	char crc[4];
-
-	for(uint8_t j = 0; j < 4; j++)
-	{
-		crc[j] = *((uint8_t*)(&buf.crc) + j);
-	}
-
-	for(uint16_t i = 0; i < sizeof(buf); i++)
-	{
-		EEPROM.write(i, 0);
-	}
-
-	for(uint16_t i = offsetof(network_info, crc); i < offsetof(network_info, crc) + sizeof(buf.crc); i++)
-	{
-		EEPROM.write(i, crc[i - offsetof(network_info, crc)]);
-	}
-
-	for(uint16_t i = offsetof(network_info, sta_ssid); i < offsetof(network_info, sta_ssid) + sizeof(buff.sta_ssid); i++)
-	{
-		EEPROM.write(i, buf.sta_ssid[i - offsetof(network_info, sta_ssid)]);
-	}
-
-	for(uint16_t i = offsetof(network_info, sta_pass); i < offsetof(network_info, sta_pass) + sizeof(buff.sta_pass); i++)
-	{
-		EEPROM.write(i, buf.sta_pass[i - offsetof(network_info, sta_pass)]);
-	}
-
-	for(uint16_t i = offsetof(network_info, wak_server); i < offsetof(network_info, wak_server) + sizeof(buff.wak_server); i++)
-	{
-		EEPROM.write(i, buf.wak_server[i - offsetof(network_info, wak_server)]);
-	}
-
-	for(uint16_t i = offsetof(network_info, wak_client_name); i < offsetof(network_info, wak_client_name) + sizeof(buff.wak_client_name); i++)
-	{
-		EEPROM.write(i, buf.wak_client_name[i - offsetof(network_info, wak_client_name)]);
-	}
-
-	EEPROM.commit();
-}
-
-void ICACHE_FLASH_ATTR get_config_eeprom(void)
-{
-	size_t max = EEPROM.length();
-	uint8_t crc[4];
-
-	for(uint16_t i = offsetof(network_info, sta_ssid); i < offsetof(network_info, sta_ssid) + sizeof(buff.sta_ssid); i++)
-	{
-		buff.sta_ssid[i - offsetof(network_info, sta_ssid)] = (char)EEPROM.read(i);
-		if(i >= max)
-		{
-			debugln("EEPROM index over EEPROM.length() 1\r\n");
-			return;
-		}
-	}
-
-	for(uint16_t i = offsetof(network_info, sta_pass); i < offsetof(network_info, sta_pass) + sizeof(buff.sta_pass); i++)
-	{
-		buff.sta_pass[i - offsetof(network_info, sta_pass)] = (char)EEPROM.read(i);
-		if(i >= max)
-		{
-			debugln("EEPROM index over EEPROM.length() 2\r\n");
-			return;
-		}
-	}
-
-	for(uint16_t i = offsetof(network_info, wak_server); i < offsetof(network_info, wak_server) + sizeof(buff.wak_server); i++)
-	{
-		buff.wak_server[i - offsetof(network_info, wak_server)] = (char)EEPROM.read(i);
-		if(i >= max)
-		{
-			debugln("EEPROM index over EEPROM.length() 3\r\n");
-			return;
-		}
-	}
-
-	for(uint16_t i = offsetof(network_info, wak_client_name); i < offsetof(network_info, wak_client_name) + sizeof(buff.wak_client_name); i++)
-	{
-		buff.wak_client_name[i - offsetof(network_info, wak_client_name)] = (char)EEPROM.read(i);
-		if(i >= max)
-		{
-			debugln("EEPROM index over EEPROM.length() 4\r\n");
-			return;
-		}
-	}
-
-	for(uint16_t i = offsetof(network_info, crc); i < offsetof(network_info, crc) + sizeof(buff.crc); i++)
-	{
-		crc[i - offsetof(network_info, crc)] = EEPROM.read(i);
-	}
-
-	buff.crc = (*(uint32_t*)(crc));
-}
-
-uint32_t ICACHE_FLASH_ATTR gen_crc(const network_info *buff)
-{
-	uint8_t len = (sizeof(buff->sta_pass) + sizeof(buff->sta_ssid) + sizeof(buff->wak_client_name) + sizeof(buff->wak_server)) / 4;
-
-	uint32_t *ptr = (uint32_t *)((uint8_t *)buff + offsetof(network_info, sta_ssid));
-
-	uint32_t crc = 0xffffffff;
-
-	for(uint8_t i = 0; i < len; i++)
-	{
-		crc = crc ^ *(ptr + i);
-		for(uint8_t j = 0; j < 8; j++)
-		{
-			if(crc & 1)
-			{
-				crc = (crc >> 1) ^ poly;
-			}
-			else
-			{
-				crc = crc >> 1;
-			}
-		}
-	}
-	return ~crc;
-}
 #ifdef LWM2M_WITH_LOGS
 void lwm2m_printf(const char * format, ...)
 {

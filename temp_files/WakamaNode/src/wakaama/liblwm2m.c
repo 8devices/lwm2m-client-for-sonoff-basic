@@ -359,6 +359,7 @@ int lwm2m_remove_object(lwm2m_context_t * contextP,
 
 #endif
 
+
 int lwm2m_step(lwm2m_context_t * contextP,
                time_t * timeoutP)
 {
@@ -425,12 +426,10 @@ next_step:
         result = registration_init_connection(contextP);
         contextP->state = STATE_REGISTER_REQUIRED2;
         *timeoutP = 0;
-        printf("Case register_required, result = %d\r\n", result);
         break;
 
     case STATE_REGISTER_REQUIRED2:
         result = registration_start(contextP);
-        printf("Case register_required2, result = %d\r\n", result);
         if (COAP_NO_ERROR != result) return result;
         contextP->state = STATE_REGISTERING;
         break;

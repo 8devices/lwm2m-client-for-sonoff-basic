@@ -81,6 +81,7 @@ void udp_raw_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_
 
     // Find connection with given address (or create it in server mode)
     addr_t t;
+    memset((void*)&t, 0, sizeof(addr_t));
     t.port = port;
     t.addr = *addr;
     connection_t * connection = internal_connection_find(network, t);
@@ -145,7 +146,6 @@ void connection_log_io(connection_t* connP, int length, bool sending) {
 #endif
 
 int mbedtls_net_send(void *ctx, const unsigned char *buffer, size_t len) {
-	printf("%s 1\r\n", __func__);
     connection_t * connection = (connection_t*)ctx;
     struct pbuf * pb = pbuf_alloc(PBUF_TRANSPORT, (u16_t)len, PBUF_REF);
     if (!pb) return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
@@ -153,26 +153,19 @@ int mbedtls_net_send(void *ctx, const unsigned char *buffer, size_t len) {
 
     err_t err;
     if (connection->addr.net_if_out)
-    {
-    	printf("%s 2\r\n", __func__);
         err = udp_sendto_if(*connection->sock, pb, &connection->addr.addr, connection->addr.port,
-                           connection->addr.net_if_out);
-    }
+                            connection->addr.net_if_out);
     else
-    {
-    	printf("%s 3\r\n", __func__);
         err = udp_sendto(*connection->sock, pb, &connection->addr.addr, connection->addr.port);
-    }
-	printf("%s 33\r\n", __func__);
+
     pbuf_free(pb); //De-allocate packet buffer
-	printf("%s 333\r\n", __func__);
+
     if (err != ERR_OK)
     {
-    	printf("%s 3333\r\n", __func__);
         network_log_error("failed sending %lu bytes\r\n", len);
         return MBEDTLS_ERR_SSL_INTERNAL_ERROR ;
     }
-	printf("%s 4\r\n", __func__);
+
     return (int)len;
 }
 
@@ -198,6 +191,7 @@ connection_t * internal_connection_create(network_t* network,
                                  uint16_t port)
 {
     ip_addr_t addr;
+    memset(&addr, 0, sizeof(addr_t));
     if (!ipaddr_aton(host, &addr))
     {
         return 0;

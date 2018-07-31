@@ -223,7 +223,6 @@ static void prv_handleRegistrationReply(lwm2m_transaction_t * transacP,
 static uint8_t prv_register(lwm2m_context_t * contextP,
                             lwm2m_server_t * server)
 {
-	printf("111\r\n");
     if (NULL == server->sessionH)
     {
         return COAP_503_SERVICE_UNAVAILABLE;
@@ -240,7 +239,6 @@ static uint8_t prv_register(lwm2m_context_t * contextP,
     payload = lwm2m_malloc(payload_length);
     if(!payload) return COAP_500_INTERNAL_SERVER_ERROR;
     payload_length = object_getRegisterPayload(contextP, payload, payload_length);
-	printf("222\r\n");
     if(payload_length == 0)
     {
         lwm2m_free(payload);
@@ -253,21 +251,19 @@ static uint8_t prv_register(lwm2m_context_t * contextP,
         lwm2m_free(payload);
         return COAP_500_INTERNAL_SERVER_ERROR;
     }
-	printf("333\r\n");
     query = lwm2m_malloc(query_length);
     if(!query)
     {
         lwm2m_free(payload);
         return COAP_500_INTERNAL_SERVER_ERROR;
     }
-	printf("444\r\n");
     if(prv_getRegistrationQuery(contextP, server, query, query_length) != query_length)
     {
         lwm2m_free(payload);
         lwm2m_free(query);
         return COAP_500_INTERNAL_SERVER_ERROR;
     }
-	printf("555\r\n");
+
     transaction = transaction_new(server->sessionH, COAP_POST, NULL, NULL, contextP->nextMID++, 4, NULL);
     if (transaction == NULL)
     {
@@ -275,7 +271,7 @@ static uint8_t prv_register(lwm2m_context_t * contextP,
         lwm2m_free(query);
         return COAP_503_SERVICE_UNAVAILABLE;
     }
-	printf("666\r\n");
+
     coap_set_header_uri_path(transaction->message, "/"URI_REGISTRATION_SEGMENT);
     coap_set_header_uri_query(transaction->message, query);
     coap_set_header_content_type(transaction->message, LWM2M_CONTENT_LINK);
@@ -283,7 +279,7 @@ static uint8_t prv_register(lwm2m_context_t * contextP,
 
     transaction->callback = prv_handleRegistrationReply;
     transaction->userData = (void *) server;
-	printf("777\r\n");
+
     contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
     if (transaction_send(contextP, transaction) != 0)
     {
@@ -291,11 +287,11 @@ static uint8_t prv_register(lwm2m_context_t * contextP,
         lwm2m_free(query);
         return COAP_503_SERVICE_UNAVAILABLE;
     }
-	printf("888\r\n");
+
     lwm2m_free(payload);
     lwm2m_free(query);
     server->status = STATE_REG_PENDING;
-	printf("999\r\n");
+
     return COAP_NO_ERROR;
 }
 
@@ -500,11 +496,10 @@ uint8_t registration_start(lwm2m_context_t * contextP)
     uint8_t result;
 
     result = COAP_NO_ERROR;
-printf("11\r\n");
+
     targetP = contextP->serverList;
     while (targetP != NULL)
     {
-    	printf("22\r\n");
         if ((targetP->status == STATE_DEREGISTERED
          || targetP->status == STATE_REG_FAILED) && targetP->sessionH)
         {
@@ -513,7 +508,7 @@ printf("11\r\n");
         }
         targetP = targetP->next;
     }
-    printf("33\r\n");
+
     return result;
 }
 

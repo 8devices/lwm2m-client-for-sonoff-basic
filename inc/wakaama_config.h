@@ -1,8 +1,6 @@
 #ifndef _WAKAAMA_CONF
 #define _WAKAAMA_CONF
 
-#include "mbedtls/ssl.h"
-
 #define LWM2M_LITTLE_ENDIAN
 // Put the library in client mode (you basically always need this)
 #define LWM2M_CLIENT_MODE
