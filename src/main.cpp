@@ -371,8 +371,9 @@ void ICACHE_FLASH_ATTR connection_deinit(void)
 
 void ICACHE_RAM_ATTR connection_loss_handler(const WiFiEventStationModeDisconnected &evt)
 {
-	if(!ap_status && !st_status)
+	if(!ap_status && !st_status && evt.reason!=8)
 	{
+		debugln("wifi disconnect reason = %d\r\n", evt.reason);
 		connection_loss_f = true;
 	}
 }

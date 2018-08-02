@@ -6,17 +6,6 @@ C++ implementation of lwm2m client code for use with Sonoff Basic WiFi Wireless 
 
 Project built on PlatformIO core. Refer to PlatformIO documentation for detailed instructions on core installation and project configuration at: http://docs.platformio.org/en/latest/
 
-Project uses third party libraries which are configured as submodules. To install submodules into cloned repository, run:
-
-$ git submodule init
-
-and
-
-$ git submodule update
-
-inside repository directory.
-
-------------------------------------------------------------------------------------------------------------------------------
 
 To compile project run:
 
