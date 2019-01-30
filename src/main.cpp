@@ -14,7 +14,6 @@
 
 //WAKAAMA
 #include "internal_objects.h"
-#include "internal.h"
 #include "lwm2m/c_connect.h"
 #include "lwm2m/debug.h"
 #include "lwm2mObjects/3312.h"
@@ -26,6 +25,31 @@
 
 //USER
 #include "user_functions.h"
+
+const char *cert =
+"-----BEGIN CERTIFICATE-----\r\n"
+"MIIB/zCCAaagAwIBAgIJAKtCMSydQ6QoMAoGCCqGSM49BAMCMFsxCzAJBgNVBAYT\r\n"
+"AkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBXaWRn\r\n"
+"aXRzIFB0eSBMdGQxFDASBgNVBAMMC3Rlc3QtY2xpZW50MB4XDTE5MDEyNDE0MzEy\r\n"
+"OFoXDTIwMDEyNDE0MzEyOFowWzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\r\n"
+"U3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEUMBIGA1UE\r\n"
+"AwwLdGVzdC1jbGllbnQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAT2rd3Eig8p\r\n"
+"txtouJlAV523yWvJX9SATnAthpqqZX3JPlAdJJ2OwSifOK8MGZdlc29v8WjLMq4o\r\n"
+"YC6hTelw0DaJo1MwUTAdBgNVHQ4EFgQUIeARezzQwzu6TUxJb3OdShs0+sowHwYD\r\n"
+"VR0jBBgwFoAUIeARezzQwzu6TUxJb3OdShs0+sowDwYDVR0TAQH/BAUwAwEB/zAK\r\n"
+"BggqhkjOPQQDAgNHADBEAiA7AvexqUgg/R+wNfEuC44yHAKdslIT6q9Rv6cbs/vc\r\n"
+"kwIgctiGd8BhPjmUeIKWudGnVY1EtlreWsjOpxG4zYUqoAE=\r\n"
+"-----END CERTIFICATE-----\r\n";
+const char *pkey =
+"-----BEGIN EC PARAMETERS-----\r\n"
+"BggqhkjOPQMBBw==\r\n"
+"-----END EC PARAMETERS-----\r\n"
+"-----BEGIN EC PRIVATE KEY-----\r\n"
+"MHcCAQEEIPZIf+S+Ki4/3x9WINUmBTenN5I5B/1WU2LA94WCaSu/oAoGCCqGSM49\r\n"
+"AwEHoUQDQgAE9q3dxIoPKbcbaLiZQFedt8lryV/UgE5wLYaaqmV9yT5QHSSdjsEo\r\n"
+"nzivDBmXZXNvb/FoyzKuKGAuoU3pcNA2iQ==\r\n"
+"-----END EC PRIVATE KEY-----\r\n";
+
 
 static volatile bool timer_initiated = false;
 static volatile bool wakaama_initiated = false;
@@ -437,10 +461,8 @@ void ICACHE_FLASH_ATTR wakaama_step(void)
 #ifndef WIFIONLY
 	debugln("Time: %u\r\n", lwm2m_gettime());
 	print_state(CTX(client_context));
-	int result = lwm2m_process(CTX(client_context), &tv);
-	if(result != 0)
-		debugln("lwm2m_process failed with status 0x%02x\r\n", result);
-	lwm2m_watch_and_reconnect(CTX(client_context), &tv, 20);
+	lwm2m_process(CTX(client_context));
+	lwm2m_watch_and_reconnect(CTX(client_context), 20);
 #else
 	debugln("Time: %u\r\n", lwm2m_gettime());
 #endif
@@ -560,6 +582,14 @@ void ICACHE_FLASH_ATTR wakaama_init(void)
 	debugln("lwm2m_add_server\r\n");
 	if(!lwm2m_add_server(CTX(client_context), 123, buff.wak_server, 30, false))
 		debugln("Failed to add server\r\n");
+
+#ifdef LWM2M_WITH_DTLS
+#ifdef LWM2M_WITH_DTLS_X509
+    lwm2m_use_dtls_x509(CTX(client_context), 123, cert, pkey, cert);
+#else
+    lwm2m_use_dtls_psk(CTX(client_context), 123, "pskid1", "psk1", strlen("psk1"));
+#endif
+#endif
 
 	client_context.deviceInstance.manufacturer = "test manufacturer";
 	client_context.deviceInstance.model_name = "test model";
